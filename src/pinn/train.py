@@ -1,6 +1,4 @@
 import os
-# Set OpenMP environment variable before any imports
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 import torch
 import torch.nn as nn
@@ -21,7 +19,7 @@ class PINNTrainer:
     """
     Trainer for the Physics-Informed Neural Network for LPBF process optimization
     """
-    def __init__(self, config_path):
+    def __init__(self, config_path, num_threads=4):
         """
         Initialize the trainer with configuration
         
@@ -34,6 +32,11 @@ class PINNTrainer:
         
         # Handle OpenMP library conflict
         os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+        self.num_threads = num_threads
+        os.environ['OMP_NUM_THREADS'] = str(self.num_threads)
+        os.environ['MKL_NUM_THREADS'] = str(self.num_threads)
+        torch.set_num_threads(self.num_threads)
+        torch.set_num_interop_threads(self.num_threads)
 
         # Set device
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -156,19 +159,24 @@ class PINNTrainer:
             y_val = torch.tensor(f['val/outputs'][:], dtype=torch.float32)
         
         # Move data to device
-        self.train_data = {
-            'S': S_train.to(self.device),
-            'coords': coords_train.to(self.device),
-            'time': time_train.to(self.device),
-            'y': y_train.to(self.device)
-        }
+        train_dataset = torch.utils.data.TensorDataset(S_train, coords_train, time_train, y_train)
+        self.train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=self.config['data']['batch_size'],
+            shuffle=True,
+            num_workers=self.num_threads,
+            pin_memory=True,
+            persistent_workers=True
+        )
         
-        self.val_data = {
-            'S': S_val.to(self.device),
-            'coords': coords_val.to(self.device),
-            'time': time_val.to(self.device),
-            'y': y_val.to(self.device)
-        }
+        val_dataset = torch.utils.data.TensorDataset(S_val, coords_val, time_val, y_val)
+        self.val_loader = torch.utils.data.DataLoader(
+            val_dataset,
+            batch_size=self.config['data']['batch_size'],
+            num_workers=self.num_threads,
+            pin_memory=True,
+            persistent_workers=True
+        )
         
         print(f"Loaded {len(S_train)} training samples and {len(S_val)} validation samples")
     
@@ -255,7 +263,7 @@ class PINNTrainer:
         
         # Create data loader
         batch_size = self.config['training']['batch_size']
-        dataset_size = len(self.train_data['S'])
+        dataset_size = len(self.train_loader.dataset)
         
         # Calculate number of batches
         n_batches = dataset_size // batch_size + (1 if dataset_size % batch_size != 0 else 0)
@@ -276,10 +284,7 @@ class PINNTrainer:
             batch_indices = indices[start_idx:end_idx]
             
             # Get batch data
-            S_batch = self.train_data['S'][batch_indices]
-            coords_batch = self.train_data['coords'][batch_indices]
-            t_batch = self.train_data['time'][batch_indices]
-            y_batch = self.train_data['y'][batch_indices]
+            S_batch, coords_batch, t_batch, y_batch = self.train_loader.dataset[batch_indices]
             
             # Training step
             losses = self.train_step(S_batch, coords_batch, t_batch, y_batch)
@@ -502,14 +507,16 @@ class PINNTrainer:
 def main():
     """Main function to start training"""
     parser = argparse.ArgumentParser(description='Train PINN for LPBF optimization')
-    parser.add_argument('--config', type=str, default='../../data/params.yaml',
+    parser.add_argument('--config', type=str, default='data/params.yaml',
                         help='Path to configuration file')
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Path to checkpoint file for resuming training')
+    parser.add_argument('--num_threads', type=int, default=4,
+                        help='Number of threads to use for parallel operations')
     args = parser.parse_args()
     
     # Initialize trainer
-    trainer = PINNTrainer(args.config)
+    trainer = PINNTrainer(args.config, num_threads=args.num_threads)
     
     # Load checkpoint if provided
     if args.checkpoint:
