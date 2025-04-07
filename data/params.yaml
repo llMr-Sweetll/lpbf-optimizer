@@ -18,15 +18,15 @@ material_properties:
 
 # Neural network model configuration
 model:
-  input_dim: 10      # Process parameters + spatial coordinates + time
+  input_dim: 9       # Process parameters + spatial coordinates + time
   output_dim: 3      # Residual stress, porosity, geometric accuracy
   hidden_width: 512  # Width of hidden layers
   hidden_depth: 5    # Number of hidden layers
 
 # Data configuration
 data:
-  raw_data_dir: "../data/raw"
-  processed_data_path: "../data/processed/lpbf_dataset.h5"
+  raw_data_dir: "c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/raw"
+  processed_data_path: "c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/processed/lpbf_dataset.h5"
   train_split: 0.8   # Fraction of data for training
   val_split: 0.1     # Fraction of data for validation
   test_split: 0.1    # Fraction of data for testing
@@ -48,6 +48,7 @@ training:
   clip_grad: true
   clip_value: 1.0
   checkpoint_freq: 10
+  output_dir: "c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/models"
   plot_freq: 10
   print_freq: 5
   output_dir: "../data/models"

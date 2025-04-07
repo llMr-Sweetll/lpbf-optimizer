@@ -13,7 +13,7 @@ class PINN(nn.Module):
         width (int): Width of hidden layers
         depth (int): Number of hidden layers
     """
-    def __init__(self, in_dim=6, out_dim=3, width=512, depth=5):
+    def __init__(self, in_dim=9, out_dim=3, width=512, depth=5):
         super().__init__()
         # Process parameters typically include:
         # - Laser power (P)

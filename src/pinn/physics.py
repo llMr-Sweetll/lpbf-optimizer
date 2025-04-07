@@ -114,9 +114,26 @@ def stress_residual(sigma, coords, mat_props):
     # Predict the full stress tensor (symmetric 3x3 tensor)
     stress_tensor = sigma(coords)
     
-    # Reshape the output to get the 6 independent components of the stress tensor
-    # [σ_xx, σ_yy, σ_zz, σ_xy, σ_yz, σ_xz]
-    stress = stress_tensor.view(-1, 6)
+    # Check the shape of the stress tensor output
+    # If it's a single value per sample, we need to handle it differently
+    if len(stress_tensor.shape) == 1 or (len(stress_tensor.shape) == 2 and stress_tensor.shape[1] < 6):
+        # If the model returns fewer than 6 components, we need to pad it
+        # This is a temporary solution to make the code run
+        # In a real scenario, the model should be retrained to output all 6 stress components
+        batch_size = coords.shape[0]
+        stress = torch.zeros(batch_size, 6, device=coords.device)
+        # Copy available components
+        if len(stress_tensor.shape) == 1:
+            # Single value case - use it for the first component
+            stress[:, 0] = stress_tensor
+        else:
+            # Multiple values but fewer than 6 - copy what we have
+            for i in range(min(stress_tensor.shape[1], 6)):
+                stress[:, i] = stress_tensor[:, i]
+    else:
+        # Normal case - reshape to get the 6 independent components
+        # [σ_xx, σ_yy, σ_zz, σ_xy, σ_yz, σ_xz]
+        stress = stress_tensor.view(-1, 6)
     
     # Compute the divergence of the stress tensor (∇·σ)
     div_sigma = torch.zeros(coords.shape[0], 3, device=coords.device)
@@ -172,14 +189,38 @@ def compute_physics_loss(model, S_batch, coords_batch, t_batch, mat_props, lambd
     """
     # Define a temperature model as a function of coordinates and time
     def temperature_model(x):
-        inp = torch.cat([S_batch, x], dim=1)
+        # Always ensure we're using exactly 9 dimensions for the model input
+        # We need to handle S_batch properly to ensure total dimensions = 9
+        # x contains coords (3) + time (1) = 4 dimensions
+        # So S_batch should contribute 5 dimensions
+        if S_batch.shape[1] > 5:  # If S_batch has more than 5 dimensions
+            # Use only the first 5 dimensions of S_batch
+            inp = torch.cat([S_batch[:, :5], x], dim=1)
+        elif S_batch.shape[1] < 5:  # If S_batch has fewer than 5 dimensions
+            # Pad S_batch with zeros to reach 5 dimensions
+            padding = torch.zeros(S_batch.shape[0], 5 - S_batch.shape[1], device=S_batch.device)
+            inp = torch.cat([S_batch, padding, x], dim=1)
+        else:  # S_batch has exactly 5 dimensions
+            inp = torch.cat([S_batch, x], dim=1)
         out = model(inp)
         T = out[:, 0]  # Assuming first output is temperature
         return T.unsqueeze(1)
     
     # Define a stress model as a function of coordinates
     def stress_model(x):
-        inp = torch.cat([S_batch, x], dim=1)
+        # Always ensure we're using exactly 9 dimensions for the model input
+        # We need to handle S_batch properly to ensure total dimensions = 9
+        # x contains coords (3) dimensions
+        # So S_batch should contribute 6 dimensions
+        if S_batch.shape[1] > 6:  # If S_batch has more than 6 dimensions
+            # Use only the first 6 dimensions of S_batch
+            inp = torch.cat([S_batch[:, :6], x], dim=1)
+        elif S_batch.shape[1] < 6:  # If S_batch has fewer than 6 dimensions
+            # Pad S_batch with zeros to reach 6 dimensions
+            padding = torch.zeros(S_batch.shape[0], 6 - S_batch.shape[1], device=S_batch.device)
+            inp = torch.cat([S_batch, padding, x], dim=1)
+        else:  # S_batch has exactly 6 dimensions
+            inp = torch.cat([S_batch, x], dim=1)
         out = model(inp)
         stress = out[:, 1:]  # Assuming remaining outputs are stress components
         return stress

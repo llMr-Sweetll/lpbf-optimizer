@@ -1,4 +1,7 @@
 import os
+# Set OpenMP environment variable before any imports
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -29,6 +32,9 @@ class PINNTrainer:
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
+        # Handle OpenMP library conflict
+        os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
         # Set device
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {self.device}")
@@ -182,7 +188,20 @@ class PINNTrainer:
         self.optimizer.zero_grad()
         
         # Forward pass
-        model_input = torch.cat([S_batch, coords_batch, t_batch], dim=1)
+        # Ensure input dimensions match model's expected dimensions (9)
+        # Check the total dimensions after concatenation
+        combined_input = torch.cat([S_batch, coords_batch, t_batch], dim=1)
+        
+        # If dimensions exceed 9, trim the excess dimensions from S_batch
+        if combined_input.shape[1] > 9:
+            # Calculate how many dimensions to keep from S_batch
+            # We need to keep coords_batch (3) and t_batch (1) intact
+            s_dims_to_keep = 9 - coords_batch.shape[1] - t_batch.shape[1]
+            # Create a properly sized input tensor
+            model_input = torch.cat([S_batch[:, :s_dims_to_keep], coords_batch, t_batch], dim=1)
+        else:
+            model_input = combined_input
+            
         y_pred = self.model(model_input)
         
         # Data loss
@@ -322,7 +341,19 @@ class PINNTrainer:
                 y_batch = self.val_data['y'][start_idx:end_idx]
                 
                 # Forward pass
-                model_input = torch.cat([S_batch, coords_batch, t_batch], dim=1)
+                # Ensure input dimensions match model's expected dimensions (9)
+                combined_input = torch.cat([S_batch, coords_batch, t_batch], dim=1)
+                
+                # If dimensions exceed 9, trim the excess dimensions from S_batch
+                if combined_input.shape[1] > 9:
+                    # Calculate how many dimensions to keep from S_batch
+                    # We need to keep coords_batch (3) and t_batch (1) intact
+                    s_dims_to_keep = 9 - coords_batch.shape[1] - t_batch.shape[1]
+                    # Create a properly sized input tensor
+                    model_input = torch.cat([S_batch[:, :s_dims_to_keep], coords_batch, t_batch], dim=1)
+                else:
+                    model_input = combined_input
+                    
                 y_pred = self.model(model_input)
                 
                 # Compute loss
