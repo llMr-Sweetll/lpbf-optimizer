@@ -20,9 +20,11 @@ This project implements a physics-informed neural network (PINN) that acts as a 
    build coupons & feed back (validation loop)
 ```
 
-## Mathematical modeling
+## Mathematical Modeling
 
 The PINN is built on the following key equations:
+
+For detailed equation derivations and implementation details, see our [Equations Reference](docs/equations_reference.md) and [PINN Architecture](docs/pinn_model_architecture.md).
 
 ### Heat equation with moving laser
 
@@ -37,6 +39,14 @@ The PINN is built on the following key equations:
 ```
 
 ## Installation and Setup
+
+### Enhanced Environment Configuration
+```bash
+# For CUDA acceleration
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu118
+
+# Verify GPU support
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 
 ### System Requirements
 
@@ -69,6 +79,20 @@ pip install -r requirements.txt
    - COMSOL: Configure paths in `data/params.yaml`
 
 ## Complete Workflow
+
+For visual explanations of each stage, see our [Workflow Flowcharts](docs/flowchart_overview.md). Detailed walkthroughs available in [Jupyter Notebook Examples](notebooks/).
+
+### Example Notebook Usage
+```python
+# From complete_workflow_example.ipynb
+from pinn.model import PINN
+from optimiser.nsga3 import NSGA3Optimizer
+
+# Initialize with pre-trained model
+optimizer = NSGA3Optimizer(config_path='data/params.yaml', 
+                         model_path='data/models/best_model.pt')
+pareto_front = optimizer.run()
+```
 
 The LPBF optimization workflow consists of several sequential steps:
 
@@ -188,6 +212,13 @@ python src/optimiser/bayesopt.py --config data/params.yaml --model data/models/T
 ```
 
 Bayesian optimization is typically more efficient for expensive evaluations but may not capture the full Pareto front as well as NSGA-III.
+
+## Development Progress
+
+Current milestones and roadmap tracked in [todo.md](todo.md). Recent updates include:
+- Physics-informed loss term improvements ([Training Metrics](docs/training_metrics.md))
+- Multi-objective optimization enhancements
+- Automated validation pipelines
 
 ### 4. Validate Results (Optional)
 

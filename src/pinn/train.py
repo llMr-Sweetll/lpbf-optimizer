@@ -263,7 +263,7 @@ class PINNTrainer:
         
         # Create data loader
         batch_size = self.config['training']['batch_size']
-        dataset_size = len(self.train_loader.dataset)
+        dataset_size = len(self.train_data['S'])
         
         # Calculate number of batches
         n_batches = dataset_size // batch_size + (1 if dataset_size % batch_size != 0 else 0)
@@ -284,7 +284,10 @@ class PINNTrainer:
             batch_indices = indices[start_idx:end_idx]
             
             # Get batch data
-            S_batch, coords_batch, t_batch, y_batch = self.train_loader.dataset[batch_indices]
+            S_batch = self.train_data['S'][batch_indices]
+            coords_batch = self.train_data['coords'][batch_indices]
+            t_batch = self.train_data['time'][batch_indices]
+            y_batch = self.train_data['y'][batch_indices]
             
             # Training step
             losses = self.train_step(S_batch, coords_batch, t_batch, y_batch)
