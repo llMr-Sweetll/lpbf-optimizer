@@ -28,20 +28,20 @@ The system replaces computationally prohibitive Finite Element Analysis (FEA) wi
 ```mermaid
 graph TD
     subgraph "Phase 1: Physics-Informed Learning"
-    A[Process Parameters<br>(P, v, h, θ)] --> B{PINN Surrogate}
-    B -->|Forward Pass| C[Predicted Fields<br>(T, σ, ε)]
-    C --> D[Physics Residuals<br>(PDEs)]
-    C --> E[Data Loss<br>(MSE)]
-    D & E --> F[Adaptive Loss Balancer<br>(GradNorm)]
+    A["Process Parameters<br>(P, v, h, θ)"] --> B{PINN Surrogate}
+    B -->|Forward Pass| C["Predicted Fields<br>(T, σ, ε)"]
+    C --> D["Physics Residuals<br>(PDEs)"]
+    C --> E["Data Loss<br>(MSE)"]
+    D & E --> F["Adaptive Loss Balancer<br>(GradNorm)"]
     F -->|Backprop| B
     end
 
     subgraph "Phase 2: Reliability-Based Optimization"
-    G[Objectives:<br>Min(Stress), Min(Porosity)] --> H{NSGA-III Optimizer}
+    G["Objectives:<br>Min(Stress), Min(Porosity)"] --> H{NSGA-III Optimizer}
     H -->|Query| B
-    B -->|MC Dropout| I[Uncertainty Estimates<br>(μ ± 2σ)]
+    B -->|MC Dropout| I["Uncertainty Estimates<br>(μ ± 2σ)"]
     I --> H
-    H --> J[Pareto Optimal<br>Scan Strategies]
+    H --> J["Pareto Optimal<br>Scan Strategies"]
     end
 
     style B fill:#f9f,stroke:#333,stroke-width:2px
