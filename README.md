@@ -1,10 +1,12 @@
 # LPBF-Optimizer: Physics-Informed Digital Twin for Additive Manufacturing
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.11-blue.svg)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-ee4c2c.svg?logo=pytorch)
-![Status](https://img.shields.io/badge/Status-Research%20Prototype-orange.svg)
-![Physics](https://img.shields.io/badge/Physics-Informed-purple.svg)
+![Header](https://capsule-render.vercel.app/api?type=waving&color=gradient&height=250&section=header&text=LPBF-Optimizer&fontSize=80&animation=fadeIn&fontAlignY=35&desc=Physics-Informed%20Digital%20Twin%20for%20AM&descSize=25&descAlignY=55)
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)
+![Python](https://img.shields.io/badge/python-3.11-blue.svg?style=for-the-badge&logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-ee4c2c.svg?style=for-the-badge&logo=pytorch&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Research%20Prototype-orange.svg?style=for-the-badge)
+![Physics](https://img.shields.io/badge/Physics-Informed-purple.svg?style=for-the-badge)
 
 > **A Framework for Multi-Objective & Reliability-Based Optimization in Laser Powder Bed Fusion (LPBF)**
 
@@ -66,26 +68,37 @@ $$
 
 ## 🚀 Research-Grade Features
 
-### 1. Adaptive Loss Balancing (GradNorm)
+### 1. Reliability-Based Optimization (NSGA-III)
+>
+> [!TIP]
+> **See the optimizer in action:** The population evolves from random initialization to a structured 3D Pareto Front, balancing **Stress**, **Porosity**, and **Build Time**.
+
+![Optimization Evolution](docs/optimization_evolution.gif)
+*Figure 2: 3D Animation of the NSGA-III population converging towards the optimal Pareto surface.*
+
+### 2. Adaptive Loss Balancing (GradNorm)
 >
 > [!IMPORTANT]
 > Multi-physics training is prone to **Gradient Pathology**, where one physical constraint dominates the optimization landscape.
 
 We implement a dynamic weighting scheme (Wang et al., 2021) that normalizes gradient magnitudes in real-time. This ensures balanced convergence across thermal and mechanical domains.
 
-![Adaptive Weights](docs/adaptive_weights.png)
-*Figure 2: Dynamic evolution of loss weights ($\lambda$) during training, demonstrating the algorithm's ability to balance competing physical constraints autonomously.*
+![Adaptive Weights](docs/weights_evolution.gif)
+*Figure 3: Dynamic evolution of loss weights ($\lambda$) during training. Note how the weights (y-axis) adjust autonomously to balance the competing PDEs.*
 
-### 2. Uncertainty Quantification (MC Dropout)
+### 3. Uncertainty Quantification (MC Dropout)
 >
 > [!NOTE]
-> Reliability is paramount. A model that cannot express doubt is dangerous in manufacturing.
+> Reliability is paramount. Predictions include epistemic uncertainty bounds ($\mu \pm 2\sigma$).
 
-We utilize **Monte Carlo Dropout** (Gal & Ghahramani, 2016) to approximate the Bayesian posterior. This provides epistemic uncertainty bounds ($\mu \pm 2\sigma$), allowing the optimizer to penalize risky, unexplored process regions.
+We utilize **Monte Carlo Dropout** (Gal & Ghahramani, 2016) to approximate the Bayesian posterior.
+
+![Loss History](docs/loss_history.gif)
+*Figure 4: Real-time training convergence. The **Physics Loss** (magenta) and **Data Loss** (cyan) are minimized simultaneously.*
 
 ---
 
-## � Project Structure & Key Files
+## 📂 Project Structure & Key Files
 
 | Module | File Link | Description |
 | :--- | :--- | :--- |
@@ -103,34 +116,95 @@ We utilize **Monte Carlo Dropout** (Gal & Ghahramani, 2016) to approximate the B
 
 ## 📚 References
 
-1. **Gal, Y., & Ghahramani, Z. (2016).** *Dropout as a Bayesian Approximation: Representing Model Uncertainty in Deep Learning*. ICML.
-2. **Wang, S., Teng, Y., & Perdikaris, P. (2021).** *Understanding and mitigating gradient flow pathologies in physics-informed neural networks*. SIAM Journal on Scientific Computing.
-3. **Zhao, Mirihanage, et al. (2025).** *Revealing melt flow instabilities in laser powder bed fusion additive manufacturing via in-situ high-speed X-ray imaging*.
-4. **Deb, K., & Jain, H. (2014).** *An Evolutionary Many-Objective Optimization Algorithm Using Reference-Point-Based Nondominated Sorting Approach, Part I: Solving Problems With Box Constraints*. IEEE Transactions on Evolutionary Computation.
+1. **Gal, Y., & Ghahramani, Z. (2016).** *Dropout as a Bayesian Approximation*. ICML.
+2. **Wang, S., Teng, Y., & Perdikaris, P. (2021).** *Understanding and mitigating gradient flow pathologies*. SIAM.
+3. **Zhao, Mirihanage, et al. (2025).** *Revealing melt flow instabilities in LPBF*.
+4. **Deb, K., & Jain, H. (2014).** *An Evolutionary Many-Objective Optimization Algorithm*. IEEE.
 
 ---
 
-## �️ Getting Started
+## 🛠️ Getting Started
 
 ### Prerequisites
 
-* Python 3.11+
-* CUDA-enabled GPU
+* **OS**: Windows, Linux, or macOS
+* **Python**: 3.10 or 3.11 (Recommended)
+* **Hardware**: NVIDIA GPU (Optional but recommended for >10x speedup)
 
-### Installation
+### 📦 Installation Guide
+
+We strongly recommend using **Conda** to manage dependencies and avoid system conflicts.
+
+#### Option A: Conda (Recommended)
+
+1. **Create a fresh environment**:
+
+    ```bash
+    conda create -n lpbf-opt python=3.11
+    conda activate lpbf-opt
+    ```
+
+2. **Clone the repository**:
+
+    ```bash
+    git clone https://github.com/llMr-Sweetll/lpbf-optimizer.git
+    cd lpbf-optimizer
+    ```
+
+3. **Install Dependencies**:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+#### Option B: Standard Python (Pip)
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/llMr-Sweetll/lpbf-optimizer.git
 cd lpbf-optimizer
-
-# 2. Install dependencies
+python -m venv venv
+# Windows:
+.\venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Usage Workflow
+---
 
-#### 1. Train the Model
+### ⚠️ Common Troubleshooting (Click to Expand)
+
+<details>
+<summary><strong>Issue: OMP: Error #15: Initializing libiomp5md.dll</strong></summary>
+
+* **Cause**: Conflict between PyTorch and NumPy OpenMP libraries on Windows.
+* **Fix**: This project automatically handles this by setting `KMP_DUPLICATE_LIB_OK=TRUE` internally. If you still see this, run:
+
+    ```bash
+    set KMP_DUPLICATE_LIB_OK=TRUE
+    ```
+
+</details>
+
+<details>
+<summary><strong>Issue: CUDA out of memory</strong></summary>
+
+* **Fix**: Reduce batch size in `data/params.yaml`:
+
+    ```yaml
+    training:
+      batch_size: 2048  # Try reducing to 1024 or 512
+    ```
+
+</details>
+
+---
+
+### 🏃‍♂️ Quick Start Workflow
+
+#### 1. Train the Digital Twin
+
+This typically takes 5-10 minutes on a GPU. It will generate a model checkpoint in `data/models/`.
 
 ```bash
 python src/pinn/train.py --config data/params.yaml
@@ -138,13 +212,20 @@ python src/pinn/train.py --config data/params.yaml
 
 #### 2. Optimize Parameters
 
+Once the model is trained, use the genetic algorithm to find optimal scan strategies.
+
 ```bash
+# Note: Replace 'latest' with specific timestamp folder if needed
 python src/optimiser/nsga3.py --config data/params.yaml --model data/models/latest/checkpoints/best_model.pt
 ```
 
-#### 3. Visualize
+#### 3. Visualize Results
 
-Results and animations are saved to `data/models/latest/plots/`.
+Check the `data/models/latest/plots/` directory. You will find:
+
+* `loss_curves.png`: Scientific proof of convergence.
+* `adaptive_weights.png`: Dynamic balancing of physics vs. data.
+* `pareto_front.png`: The trade-off between speed and quality.
 
 ---
 *Developed for Advanced Manufacturing Research.*
