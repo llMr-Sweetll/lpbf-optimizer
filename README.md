@@ -4,7 +4,7 @@ A physics-informed, AI-driven optimizer for Laser Powder Bed Fusion manufacturin
 
 ## Overview
 
-This project implements a physics-informed neural network (PINN) that acts as a surrogate model for predicting key outcomes of the LPBF process (residual stress, porosity, geometric accuracy) based on process parameters (laser power, scan speed, etc.). The PINN is then used in a multi-objective optimizer to find optimal scan vectors that balance multiple competing objectives.
+This project implements a Physics-Informed Neural Network (PINN) that acts as a surrogate model for predicting key outcomes of the LPBF process (residual stress, porosity, geometric accuracy). It features research-grade implementations of **Uncertainty Quantification (MC Dropout)** and **Adaptive Loss Balancing (GradNorm-inspired)** to ensure robust and reliable predictions. The PINN is then used in a multi-objective optimizer to find optimal scan vectors.
 
 ## Big-picture flow
 
@@ -41,12 +41,17 @@ For detailed equation derivations and implementation details, see our [Equations
 ## Installation and Setup
 
 ### Enhanced Environment Configuration
+
 ```bash
 # For CUDA acceleration
 pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu118
 
 # Verify GPU support
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+```
+
+> [!NOTE]
+> The repository automatically handles OpenMP library conflicts (`KMP_DUPLICATE_LIB_OK=TRUE`) during runtime, so no manual environment variable configuration is needed for that.
 
 ### System Requirements
 
@@ -58,18 +63,21 @@ python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/yourusername/lpbf-optimizer.git
 cd lpbf-optimizer
 ```
 
 2. Create a virtual environment (recommended):
+
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
 3. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -83,6 +91,7 @@ pip install -r requirements.txt
 For visual explanations of each stage, see our [Workflow Flowcharts](docs/flowchart_overview.md). Detailed walkthroughs available in [Jupyter Notebook Examples](notebooks/).
 
 ### Example Notebook Usage
+
 ```python
 # From complete_workflow_example.ipynb
 from pinn.model import PINN
@@ -99,6 +108,7 @@ The LPBF optimization workflow consists of several sequential steps:
 ### 1. Generate or Process Data
 
 You can either:
+
 - Generate synthetic data for development/testing
 - Process real FEA simulation results
 - Use a combination of both
@@ -112,11 +122,13 @@ python src/generate_synthetic_data.py --config data/params.yaml --scan-vectors 1
 This creates a dataset in `data/processed/lpbf_dataset.h5` with synthetic simulation data.
 
 The synthetic data generation module simulates:
+
 - Physical relationships between process parameters and outcomes
 - Spatial variations in material properties
 - Realistic noise and variations found in real-world measurements
 
 Key parameters for synthetic data generation:
+
 - `scan-vectors`: Number of different parameter combinations (default: 100)
 - `points-per-vector`: Number of spatial points per scan vector (default: 1000)
 - `config`: Path to configuration file with material properties
@@ -130,6 +142,7 @@ python src/fea_runner.py --config data/params.yaml --sweep parameter_sweep.csv
 ```
 
 The `parameter_sweep.csv` file should contain parameter combinations to simulate:
+
 ```
 P,v,h,theta
 200,800,0.1,45
@@ -160,6 +173,7 @@ The training process saves model checkpoints to `data/models/TIMESTAMP/checkpoin
 #### 2.1 Training with Physics Constraints
 
 The physics-informed aspect of training is controlled in `params.yaml`:
+
 ```yaml
 training:
   lambda_heat: 0.1   # Weight for heat equation physics loss
@@ -171,11 +185,13 @@ Increase these weights to enforce stronger physics constraints, or decrease them
 #### 2.2 Monitoring Training
 
 Monitor training metrics with:
+
 ```bash
 tensorboard --logdir data/models
 ```
 
 To resume training from a checkpoint:
+
 ```bash
 python src/pinn/train.py --config data/params.yaml --checkpoint path/to/checkpoint.pt
 ```
@@ -193,6 +209,7 @@ This generates a Pareto front of optimal process parameters in `data/optimized/p
 #### 3.1 NSGA-III Optimization
 
 The NSGA-III algorithm is configured in `params.yaml`:
+
 ```yaml
 optimizer:
   pop_size: 100
@@ -207,6 +224,7 @@ optimizer:
 #### 3.2 Bayesian Optimization Alternative
 
 Alternatively, use Bayesian optimization:
+
 ```bash
 python src/optimiser/bayesopt.py --config data/params.yaml --model data/models/TIMESTAMP/checkpoints/best_model.pt
 ```
@@ -216,7 +234,10 @@ Bayesian optimization is typically more efficient for expensive evaluations but 
 ## Development Progress
 
 Current milestones and roadmap tracked in [todo.md](todo.md). Recent updates include:
+
 - Physics-informed loss term improvements ([Training Metrics](docs/training_metrics.md))
+- **Uncertainty Quantification**: Monte Carlo Dropout for aleatoric/epistemic uncertainty estimation.
+- **Adaptive Loss Balancing**: Dynamic weighting of physics vs. data losses to prevent gradient pathology.
 - Multi-objective optimization enhancements
 - Automated validation pipelines
 
@@ -281,6 +302,7 @@ All configuration is managed through the `data/params.yaml` file, which includes
 ### Key Configuration Parameters
 
 #### Material Properties
+
 ```yaml
 material_properties:
   rho: 4430.0       # Density (kg/m^3)
@@ -292,6 +314,7 @@ material_properties:
 ```
 
 #### Neural Network Architecture
+
 ```yaml
 model:
   input_dim: 10     # Process parameters + spatial coordinates + time
@@ -301,6 +324,7 @@ model:
 ```
 
 #### Process Parameter Bounds
+
 ```yaml
 optimizer:
   param_bounds:
@@ -417,22 +441,22 @@ python src/pinn/train.py --config data/params_modified.yaml
 
 ### Common Issues
 
-1. **CUDA out of memory**: 
+1. **CUDA out of memory**:
    - Reduce batch size in params.yaml
    - Use gradient accumulation (increase `accumulation_steps`)
    - Train on CPU with `export CUDA_VISIBLE_DEVICES=''`
 
-2. **FEA solver errors**: 
+2. **FEA solver errors**:
    - Check solver installation and template files
    - Verify solver license is active
    - Check for conflicting processes using the same license
 
-3. **Unstable training**: 
+3. **Unstable training**:
    - Adjust learning rate (try 1e-4 instead of 1e-3)
    - Modify physics loss weights (start with lower values)
    - Use gradient clipping (set `clip_grad: true` and `clip_value: 1.0`)
 
-4. **Poor optimization results**: 
+4. **Poor optimization results**:
    - Check parameter bounds for realistic values
    - Increase population size and generations
    - Examine surrogate model accuracy (should have R² > 0.8)
@@ -459,9 +483,9 @@ logging.basicConfig(filename='lpbf-optimizer.log', level=logging.INFO)
 
 ## Theory: Why Physics-Informed Beats Black-Box Models
 
-* **Smaller data need** – PDE loss acts like an "infinite synthetic dataset".  
-* **Better extrapolation** – network can't predict thermodynamically impossible states.  
-* **Regulatory confidence** – engineers (and certifying bodies) can read the residual terms and trust the model.
+- **Smaller data need** – PDE loss acts like an "infinite synthetic dataset".  
+- **Better extrapolation** – network can't predict thermodynamically impossible states.  
+- **Regulatory confidence** – engineers (and certifying bodies) can read the residual terms and trust the model.
 
 ## Contributing
 

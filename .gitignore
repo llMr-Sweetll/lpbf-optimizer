@@ -42,15 +42,22 @@ error_log.txt
 opt_log.txt
 logs/
 
-# Data and Models (Keep raw structure but ignore large files if not tracked)
-# Assuming we want to track directory structure but not heavy binary files
+# Data and Models
+# Ignore large data files but keep directory structure
+data/raw/fea_results/*
+!data/raw/fea_results/.gitkeep
 data/processed/*.h5
-data/models/**/*.pt
+data/models/*/checkpoints/*.pt
 data/optimized/*.h5
 data/optimized/*.csv
 data/optimized/*.png
-data/raw/fea_results/*
+
+# Keep log directories but ignore content
+logs/*
+!logs/.gitkeep
 
 # Temporary files
 temp/
 tmp/
+*.tmp
+*.bak

@@ -1,0 +1,84 @@
+data:
+  processed_data_path: c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/processed/lpbf_dataset.h5
+  raw_data_dir: c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/raw
+  test_split: 0.1
+  train_split: 0.8
+  val_split: 0.1
+fea:
+  abaqus_path: abaqus
+  comsol_java_path: /Applications/COMSOL55/Multiphysics/plugins/org.comsol.model.jarfile/model.jar
+  comsol_path: comsol
+  n_cpus: 4
+  output_dir: ../data/raw/fea_results
+  solver_type: abaqus
+  template_path: ../data/templates/lpbf_template.inp
+material_properties:
+  E: 110.0
+  Hm: 286000.0
+  Tl: 1660.0
+  Ts: 1604.0
+  alpha: 8.6e-06
+  cp: 526.3
+  eta: 0.35
+  k: 6.7
+  nu: 0.34
+  r0: 0.05
+  rho: 4430.0
+  sigma_y: 1100.0
+model:
+  dropout_rate: 0.1
+  hidden_depth: 5
+  hidden_width: 512
+  input_dim: 10
+  output_dim: 3
+optimizer:
+  algorithm: nsga3
+  n_gen: 100
+  n_partitions: 12
+  n_trials: 50
+  objectives:
+  - residual_stress
+  - porosity
+  - geometric_accuracy
+  output_dir: c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/optimized
+  param_bounds:
+    P:
+    - 150
+    - 400
+    h:
+    - 0.05
+    - 0.15
+    l_island:
+    - 2
+    - 10
+    layer_thickness:
+    - 0.02
+    - 0.06
+    theta:
+    - 0
+    - 90
+    v:
+    - 100
+    - 2000
+  pop_size: 100
+  seed: 42
+training:
+  balancer_alpha: 1.5
+  batch_size: 64
+  checkpoint_freq: 10
+  clip_grad: true
+  clip_value: 1.0
+  lambda_heat: 0.1
+  lambda_stress: 0.1
+  n_epochs: 2
+  optimizer:
+    learning_rate: 0.001
+    type: adam
+    weight_decay: 1.0e-05
+  output_dir: c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/models
+  plot_freq: 10
+  print_freq: 5
+  scheduler:
+    factor: 0.5
+    patience: 20
+    type: reducelronplateau

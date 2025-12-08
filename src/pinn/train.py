@@ -12,7 +12,9 @@ import h5py
 from pathlib import Path
 
 from model import PINN
+from model import PINN
 from physics import compute_physics_loss
+from loss_balancer import AdaptiveLossBalancer
 
 
 class PINNTrainer:
@@ -54,6 +56,9 @@ class PINNTrainer:
         # Set up optimizer
         self.optimizer = self._build_optimizer()
         
+        # Initialize Adaptive Loss Balancer (Weights: Data, Heat, Stress)
+        self.loss_balancer = AdaptiveLossBalancer(num_losses=3, alpha=self.config['training'].get('balancer_alpha', 1.5))
+        
         # Set up learning rate scheduler
         self.scheduler = self._build_scheduler()
         
@@ -62,7 +67,8 @@ class PINNTrainer:
             'train_loss': [],
             'val_loss': [],
             'data_loss': [],
-            'physics_loss': []
+            'physics_loss': [],
+            'loss_weights': {'data': [], 'heat': [], 'stress': []}
         }
         
         # Current epoch
@@ -93,7 +99,8 @@ class PINNTrainer:
             in_dim=model_config['input_dim'],
             out_dim=model_config['output_dim'],
             width=model_config['hidden_width'],
-            depth=model_config['hidden_depth']
+            depth=model_config['hidden_depth'],
+            dropout_rate=model_config.get('dropout_rate', 0.1)
         )
         model = model.to(self.device)
         return model
@@ -216,23 +223,58 @@ class PINNTrainer:
             
         y_pred = self.model(model_input)
         
+        # Compute losses (Data, Heat, Stress)
+        # Note: We need component-wise physics losses for the balancer
+        
         # Data loss
         mse_loss = nn.MSELoss()
         data_loss = mse_loss(y_pred, y_batch)
         
-        # Physics loss
-        physics_loss = compute_physics_loss(
+        # Physics loss components
+        heat_loss, stress_loss = compute_physics_loss(
             self.model, 
             S_batch, 
             coords_batch, 
             t_batch, 
             self.mat_props,
-            lambda_heat=self.config['training']['lambda_heat'],
-            lambda_stress=self.config['training']['lambda_stress']
+            return_components=True
         )
         
-        # Total loss
-        total_loss = data_loss + physics_loss
+        # Update loss weights using Adaptive Loss Balancer
+        # We need the last shared layer parameters for gradient computation
+        # Typically the last layer of the shared encoder before task-specific heads
+        # In our PINN, self.model.hidden[-1] is the last linear layer of the shared trunk
+        shared_params = list(self.model.hidden[-1].parameters())[0] if hasattr(self.model, 'hidden') else list(self.model.parameters())[-2]
+        
+        try:
+             # Stack losses for the balancer
+            raw_losses = [data_loss, heat_loss, stress_loss]
+            weights = self.loss_balancer.update_weights(raw_losses, shared_params)
+            
+            # Weighted total loss
+            # weights[0] -> Data, weights[1] -> Heat, weights[2] -> Stress
+            total_loss = (weights[0] * data_loss + 
+                          weights[1] * heat_loss + 
+                          weights[2] * stress_loss)
+            
+            # Log current weights for plotting (detach to avoid graph retention)
+            # Store single value for the batch (approximated)
+            current_weights = weights.detach().cpu().numpy()
+            self.metrics['loss_weights']['data'].append(current_weights[0])
+            self.metrics['loss_weights']['heat'].append(current_weights[1])
+            self.metrics['loss_weights']['stress'].append(current_weights[2])
+                          
+        except Exception as e:
+            # Fallback if balancer fails (e.g. graph issues)
+            # print(f"Warning: Loss balancer failed ({e}), using static weights") # Reduce spam
+            total_loss = data_loss + \
+                         self.config['training']['lambda_heat'] * heat_loss + \
+                         self.config['training']['lambda_stress'] * stress_loss
+                         
+            # Log static weights
+            self.metrics['loss_weights']['data'].append(1.0)
+            self.metrics['loss_weights']['heat'].append(self.config['training']['lambda_heat'])
+            self.metrics['loss_weights']['stress'].append(self.config['training']['lambda_stress'])
         
         # Backward pass
         total_loss.backward()
@@ -250,7 +292,9 @@ class PINNTrainer:
         return {
             'total': total_loss.item(),
             'data': data_loss.item(),
-            'physics': physics_loss.item()
+            'physics': (heat_loss + stress_loss).item(),
+            'heat': heat_loss.item(),
+            'stress': stress_loss.item()
         }
     
     def train_epoch(self, epoch):
@@ -415,28 +459,53 @@ class PINNTrainer:
         print(f"Loaded checkpoint from epoch {checkpoint['epoch']+1}")
     
     def plot_metrics(self):
-        """Plot training and validation metrics"""
+        """Plot training and validation metrics with publication-quality formatting"""
+        plt.style.use('seaborn-v0_8-whitegrid') # Use a clean, scientific style if available, else defaults
+        
         # Plot loss curves
-        plt.figure(figsize=(10, 6))
-        plt.plot(self.metrics['train_loss'], label='Train Loss')
-        plt.plot(self.metrics['val_loss'], label='Validation Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.title('Training and Validation Loss')
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(self.plot_dir / 'loss_curves.png')
+        plt.figure(figsize=(10, 6), dpi=300)
+        plt.plot(self.metrics['train_loss'], label='Train Loss', linewidth=2)
+        plt.plot(self.metrics['val_loss'], label='Validation Loss', linewidth=2, linestyle='--')
+        plt.xlabel('Epoch', fontsize=12, fontweight='bold')
+        plt.ylabel('Loss (MSE)', fontsize=12, fontweight='bold')
+        plt.title('Training and Validation Loss Evolution', fontsize=14, fontweight='bold')
+        plt.legend(fontsize=11)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(self.plot_dir / 'loss_curves.png', dpi=300)
+        plt.close()
         
         # Plot data vs physics loss
-        plt.figure(figsize=(10, 6))
-        plt.plot(self.metrics['data_loss'], label='Data Loss')
-        plt.plot(self.metrics['physics_loss'], label='Physics Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.title('Data and Physics Loss Components')
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(self.plot_dir / 'loss_components.png')
+        plt.figure(figsize=(10, 6), dpi=300)
+        plt.plot(self.metrics['data_loss'], label='Data Loss (MSE)', linewidth=2)
+        plt.plot(self.metrics['physics_loss'], label='Physics Residuals', linewidth=2)
+        plt.xlabel('Epoch', fontsize=12, fontweight='bold')
+        plt.ylabel('Loss Component Magnitude', fontsize=12, fontweight='bold')
+        plt.title('Data vs. Physics Loss Components', fontsize=14, fontweight='bold')
+        plt.legend(fontsize=11)
+        plt.grid(True, alpha=0.3)
+        plt.yscale('log') # Log scale to see differences better
+        plt.tight_layout()
+        plt.savefig(self.plot_dir / 'loss_components.png', dpi=300)
+        plt.close()
+        
+        # Plot Adaptive Weights Evolution
+        # Weights are logged per step, so we might want to downsample or plot moving average
+        # For now, plot all steps to show detailed dynamics
+        if self.metrics['loss_weights']['data']:
+            plt.figure(figsize=(10, 6), dpi=300)
+            steps = range(len(self.metrics['loss_weights']['data']))
+            plt.plot(steps, self.metrics['loss_weights']['data'], label='$\lambda_{data}$', alpha=0.8)
+            plt.plot(steps, self.metrics['loss_weights']['heat'], label='$\lambda_{heat}$', alpha=0.8)
+            plt.plot(steps, self.metrics['loss_weights']['stress'], label='$\lambda_{stress}$', alpha=0.8)
+            plt.xlabel('Training Step', fontsize=12, fontweight='bold')
+            plt.ylabel('Adaptive Weight Value', fontsize=12, fontweight='bold')
+            plt.title('Evolution of Adaptive Loss Weights (GradNorm)', fontsize=14, fontweight='bold')
+            plt.legend(fontsize=11)
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(self.plot_dir / 'adaptive_weights.png', dpi=300)
+            plt.close()
     
     def train(self):
         """Main training loop"""

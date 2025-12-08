@@ -22,6 +22,7 @@ model:
   output_dim: 3      # Residual stress, porosity, geometric accuracy
   hidden_width: 512  # Width of hidden layers
   hidden_depth: 5    # Number of hidden layers
+  dropout_rate: 0.1  # MC Dropout rate for UQ (Gal & Ghahramani, 2016)
 
 # Data configuration
 data:
@@ -35,6 +36,7 @@ data:
 training:
   n_epochs: 2
   batch_size: 64
+  balancer_alpha: 1.5 # Alpha for Adaptive Loss Balancing (Wang et al. 2021)
   optimizer:
     type: "adam"
     learning_rate: 0.001

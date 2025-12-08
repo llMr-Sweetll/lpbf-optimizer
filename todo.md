@@ -39,3 +39,20 @@
 - [ ] **Functionally Graded Materials (FGMs)**:
   - [ ] Optimize parameters for transitioning alloy compositions (e.g., SS316L to Inconel 718).
   - [ ] Model mixing kinetics and intermetallic phase formation risks.
+
+## Phase 5: 3D Simulation & Microstructure Evolution (Future)
+
+**Objective**: Transition from 2D cross-sections to full 3D melt pool dynamics and grain structure prediction.
+**Key References**:
+
+- *Zhao, Mirihanage, et al. (2025)*: Revealing melt flow instabilities in LPBF via in-situ X-ray imaging.
+- *PINNs for Additive Manufacturing Review (2025)*: Thermal management and multi-track prediction.
+
+- [ ] **3D PINN Architecture**
+  - [ ] Extend input dim to explicitly include `z`-axis for volumetric prediction.
+  - [ ] Implement 3D Convolutional/Attention mechanisms for spatial correlations.
+- [ ] **Microstructure Modeling**
+  - [ ] Integrate Phase Field methods with PINNs for grain growth (Grand-Potential functional).
+  - [ ] Predict grain orientation and size distribution (EBSD correlation).
+- [ ] **Visualisation**
+  - [ ] Interactive 3D melt pool visualization (VTK/Paraview export).

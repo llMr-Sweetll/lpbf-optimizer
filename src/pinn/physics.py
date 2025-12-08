@@ -171,7 +171,7 @@ def stress_residual(sigma, coords, mat_props):
     return div_sigma
 
 
-def compute_physics_loss(model, S_batch, coords_batch, t_batch, mat_props, lambda_heat=1.0, lambda_stress=1.0):
+def compute_physics_loss(model, S_batch, coords_batch, t_batch, mat_props, lambda_heat=1.0, lambda_stress=1.0, return_components=False):
     """
     Compute the combined physics loss for the PINN
     
@@ -183,9 +183,10 @@ def compute_physics_loss(model, S_batch, coords_batch, t_batch, mat_props, lambd
         mat_props: Material properties
         lambda_heat: Weight for heat equation residual
         lambda_stress: Weight for stress equation residual
+        return_components (bool): If True, returns (heat_loss, stress_loss) tuple.
     
     Returns:
-        torch.Tensor: Combined physics loss
+        torch.Tensor or tuple: Combined physics loss or components
     """
     # Define a temperature model as a function of coordinates and time
     def temperature_model(x):
@@ -240,6 +241,9 @@ def compute_physics_loss(model, S_batch, coords_batch, t_batch, mat_props, lambd
     # Compute losses
     heat_loss = torch.mean(heat_res**2)
     stress_loss = torch.mean(torch.sum(stress_res**2, dim=1))
+    
+    if return_components:
+        return heat_loss, stress_loss
     
     # Combine losses
     physics_loss = lambda_heat * heat_loss + lambda_stress * stress_loss
