@@ -60,6 +60,7 @@ $$
 $$
 
 Where the heat residual $\mathcal{L}_{heat}$ enforces energy conservation:
+
 $$
 \rho c_p \frac{\partial T}{\partial t} - \nabla \cdot (k \nabla T) = \frac{2\eta P}{\pi r_0^2} \exp\left(\frac{-2r^2}{r_0^2}\right) - \mathcal{L}_{latent}
 $$
@@ -84,7 +85,202 @@ $$
 We implement a dynamic weighting scheme (Wang et al., 2021) that normalizes gradient magnitudes in real-time. This ensures balanced convergence across thermal and mechanical domains.
 
 ![Adaptive Weights](docs/weights_evolution.gif)
-*Figure 3: Dynamic evolution of loss weights ($\lambda$) during training. Note how the weights (y-axis) adjust autonomously to balance the competing PDEs.*
+*Figure 3: Dynamic evolution of loss weights (λ) during training. Note how the weights (y-axis) adjust autonomously to balance the competing PDEs.*
+
+### 3. Uncertainty Quantification (MC Dropout)
+>
+> [!NOTE]
+> Reliability is paramount. Predictions include epistemic uncertainty bounds ($\mu \pm 2\sigma$).
+
+We utilize **Monte Carlo Dropout** (Gal & Ghahramani, 2016) to approximate the Bayesian posterior.
+
+![Loss History](docs/loss_history.gif)
+*Figure 4: Real-time training convergence. The **Physics Loss** (magenta) and **Data Loss** (cyan) are minimized simultaneously.*
+
+---
+
+## 📂 Project Structure & Key Files
+
+| Module | File Link | Description |
+| :--- | :--- | :--- |
+| **Neural Core** | [`src/pinn/model.py`](src/pinn/model.py) | The `PINN` architecture with MC Dropout layers. |
+| **Physics** | [`src/pinn/physics.py`](src/pinn/physics.py) | Differentiable PDE definitions for heat & stress. |
+| **Balancing** | [`src/pinn/loss_balancer.py`](src/pinn/loss_balancer.py) | The `AdaptiveLossBalancer` class implementing GradNorm. |
+| **Optimization** | [`src/optimiser/nsga3.py`](src/optimiser/nsga3.py) | Multi-objective genetic algorithm engine. |
+| **Roadmap** | [`todo.md`](todo.md) | **Development Roadmap** and future research directions (3D Sim phase). |
+| **Config** | [`data/params.yaml`](data/params.yaml) | Centralized configuration for physics & ML hyperparameters. |
+
+> [!TIP]
+> Check `todo.md` for our detailed roadmap towards **Phase 5: 3D Microstructure Simulation**.
+
+---
+
+## 📚 References
+
+1. **Gal, Y., & Ghahramani, Z. (2016).** *Dropout as a Bayesian Approximation*. ICML.
+2. **Wang, S., Teng, Y., & Perdikaris, P. (2021).** *Understanding and mitigating gradient flow pathologies*. SIAM.
+3. **Zhao, Mirihanage, et al. (2025).** *Revealing melt flow instabilities in LPBF*.
+4. **Deb, K., & Jain, H. (2014).** *An Evolutionary Many-Objective Optimization Algorithm*. IEEE.
+
+---
+
+## 🛠️ Getting Started
+
+### Prerequisites
+
+* **OS**: Windows, Linux, or macOS
+* **Python**: 3.10 or 3.11 (Recommended)
+* **Hardware**: NVIDIA GPU (Optional but recommended for >10x speedup)
+
+### 📦 Installation Guide
+
+We strongly recommend using **Conda** to manage dependencies and avoid system conflicts.
+
+#### Option A: Conda (Recommended)
+
+1. **Create a fresh environment**:
+
+    ```bash
+    conda create -n lpbf-opt python=3.11
+    conda activate lpbf-opt
+    ```
+
+2. **Clone the repository**:
+
+    ```bash
+    git clone https://github.com/llMr-Sweetll/lpbf-optimizer.git
+    cd lpbf-optimizer
+    ```
+
+3. **Install Dependencies**:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+#### Option B: Standard Python (Pip)
+
+```bash
+git clone https://github.com/llMr-Sweetll/lpbf-optimizer.git
+cd lpbf-optimizer
+python -m venv venv
+# Windows:
+.\venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+---
+
+### ⚠️ Common Troubleshooting (Click to Expand)
+
+#### Issue: OMP: Error #15: Initializing libiomp5md.dll
+
+* **Cause**: Conflict between PyTorch and NumPy OpenMP libraries on Windows.
+* **Fix**: This project automatically handles this by setting `KMP_DUPLICATE_LIB_OK=TRUE` internally. If you still see this, run:
+
+    ```bash
+    set KMP_DUPLICATE_LIB_OK=TRUE
+    ```
+
+#### Issue: CUDA out of memory
+
+* **Fix**: Reduce batch size in `data/params.yaml`:
+
+    ```yaml
+    training:
+      batch_size: 2048  # Try reducing to 1024 or 512
+    ```
+
+---
+
+### 🏃‍♂️ Quick Start Workflow
+
+#### 1. Train the Digital Twin
+
+This typically takes 5-10 minutes on a GPU. It will generate a model checkpoint in `data/models/`.
+
+```bash
+python src/pinn/train.py --config data/params.yaml
+```
+
+#### 2. Optimize Parameters
+
+Once the model is trained, use the genetic algorithm to find optimal scan strategies.
+
+```bash
+# Note: Replace 'latest' with specific timestamp folder if needed
+python src/optimiser/nsga3.py --config data/params.yaml --model data/models/latest/checkpoints/best_model.pt
+```
+
+#### 3. Visualize Results
+
+Check the `data/models/latest/plots/` directory. You will find:
+
+* `loss_curves.png`: Scientific proof of convergence.
+* `adaptive_weights.png`: Dynamic balancing of physics vs. data.
+
+```mermaid
+graph TD
+    subgraph "Phase 1: Physics-Informed Learning"
+    A["Process Parameters<br>(P, v, h, θ)"] --> B{PINN Surrogate}
+    B -->|Forward Pass| C["Predicted Fields<br>(T, σ, ε)"]
+    C --> D["Physics Residuals<br>(PDEs)"]
+    C --> E["Data Loss<br>(MSE)"]
+    D & E --> F["Adaptive Loss Balancer<br>(GradNorm)"]
+    F -->|Backprop| B
+    end
+
+    subgraph "Phase 2: Reliability-Based Optimization"
+    G["Objectives:<br>Min(Stress), Min(Porosity)"] --> H{NSGA-III Optimizer}
+    H -->|Query| B
+    B -->|MC Dropout| I["Uncertainty Estimates<br>(μ ± 2σ)"]
+    I --> H
+    H --> J["Pareto Optimal<br>Scan Strategies"]
+    end
+
+    style B fill:#f9f,stroke:#333,stroke-width:2px
+    style H fill:#bbf,stroke:#333,stroke-width:2px
+    style F fill:#bfb,stroke:#333,stroke-width:2px
+```
+
+### Physics-Informed Loss Function
+
+We solve the coupled multi-physics system by minimizing a composite loss function $\mathcal{L}$:
+
+$$
+\mathcal{L} = \lambda_{\text{data}}\mathcal{L}*{\text{data}} + \lambda*{\text{heat}}\mathcal{L}*{\text{heat}} + \lambda*{\text{stress}}\mathcal{L}_{\text{stress}}
+$$
+
+Where the heat residual $\mathcal{L}_{\text{heat}}$ enforces energy conservation:
+
+$$
+\rho c_p \frac{\partial T}{\partial t} - \nabla \cdot (k \nabla T) = \frac{2\eta P}{\pi r_0^2} \exp\left(-\frac{2r^2}{r_0^2}\right) - \mathcal{L}_{\text{latent}}
+$$
+$$
+
+---
+
+## 🚀 Research-Grade Features
+
+### 1. Reliability-Based Optimization (NSGA-III)
+>
+> [!TIP]
+> **See the optimizer in action:** The population evolves from random initialization to a structured 3D Pareto Front, balancing **Stress**, **Porosity**, and **Build Time**.
+
+![Optimization Evolution](docs/optimization_evolution.gif)
+*Figure 2: 3D Animation of the NSGA-III population converging towards the optimal Pareto surface.*
+
+### 2. Adaptive Loss Balancing (GradNorm)
+>
+> [!IMPORTANT]
+> Multi-physics training is prone to **Gradient Pathology**, where one physical constraint dominates the optimization landscape.
+
+We implement a dynamic weighting scheme (Wang et al., 2021) that normalizes gradient magnitudes in real-time. This ensures balanced convergence across thermal and mechanical domains.
+
+![Adaptive Weights](docs/weights_evolution.gif)
+*Figure 3: Dynamic evolution of loss weights (λ) during training. Note how the weights (y-axis) adjust autonomously to balance the competing PDEs.*
 
 ### 3. Uncertainty Quantification (MC Dropout)
 >
@@ -224,13 +420,11 @@ Check the `data/models/latest/plots/` directory. You will find:
 ---
 *Developed for Advanced Manufacturing Research.*
 
-<div align="center">
+![Let's Connect](https://capsule-render.vercel.app/api?type=waving&color=gradient&height=100&section=footer&text=Let's%20Connect&fontSize=30)
 
-## llMr-Sweetll
+### llMr-Sweetll
 
-*Carbon-based Life Form*
-
-*AI for Advanced Manufacturing | Digital Twins | Optimization*
+*Carbon-based Life Form | AI for Advanced Manufacturing*
 
 Passionate about pioneering the future of AI-driven materials science. Always open to connecting with fellow researchers and engineers to discuss innovative ideas in computational mechanics and machine learning.
 
@@ -239,12 +433,8 @@ Passionate about pioneering the future of AI-driven materials science. Always op
 [![Email](https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:hegde.g.chandrashekhar@gmail.com)
 
 **Interests**:
-
 `Physics-Informed ML` • `Multi-Objective Optimization` • `Additive Manufacturing` • `Computational Materials Science`
 
 > **"Optimizing the future of manufacturing, one melt pool at a time."**
 
-</div>
-
----
-![Let's Connect](https://capsule-render.vercel.app/api?type=waving&color=gradient&height=100&section=footer&text=Let's%20Connect&fontSize=30)
+```
