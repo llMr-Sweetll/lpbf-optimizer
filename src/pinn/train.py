@@ -162,7 +162,7 @@ class PINNTrainer:
         train_dataset = torch.utils.data.TensorDataset(S_train, coords_train, time_train, y_train)
         self.train_loader = torch.utils.data.DataLoader(
             train_dataset,
-            batch_size=self.config['data']['batch_size'],
+            batch_size=self.config['training']['batch_size'],
             shuffle=True,
             num_workers=self.num_threads,
             pin_memory=True,
@@ -172,7 +172,7 @@ class PINNTrainer:
         val_dataset = torch.utils.data.TensorDataset(S_val, coords_val, time_val, y_val)
         self.val_loader = torch.utils.data.DataLoader(
             val_dataset,
-            batch_size=self.config['data']['batch_size'],
+            batch_size=self.config['training']['batch_size'],
             num_workers=self.num_threads,
             pin_memory=True,
             persistent_workers=True
@@ -196,15 +196,19 @@ class PINNTrainer:
         self.optimizer.zero_grad()
         
         # Forward pass
-        # Ensure input dimensions match model's expected dimensions (9)
-        # Check the total dimensions after concatenation
+        # Ensure input dimensions match model's expected dimensions
+        print(f"DEBUG: S_batch shape: {S_batch.shape}")
+        print(f"DEBUG: coords_batch shape: {coords_batch.shape}")
+        print(f"DEBUG: t_batch shape: {t_batch.shape}")
         combined_input = torch.cat([S_batch, coords_batch, t_batch], dim=1)
+        print(f"DEBUG: combined_input shape: {combined_input.shape}")
+        input_dim = self.config['model']['input_dim']
         
-        # If dimensions exceed 9, trim the excess dimensions from S_batch
-        if combined_input.shape[1] > 9:
+        # If dimensions exceed expected input_dim, trim the excess dimensions from S_batch
+        if combined_input.shape[1] > input_dim:
             # Calculate how many dimensions to keep from S_batch
             # We need to keep coords_batch (3) and t_batch (1) intact
-            s_dims_to_keep = 9 - coords_batch.shape[1] - t_batch.shape[1]
+            s_dims_to_keep = input_dim - coords_batch.shape[1] - t_batch.shape[1]
             # Create a properly sized input tensor
             model_input = torch.cat([S_batch[:, :s_dims_to_keep], coords_batch, t_batch], dim=1)
         else:
@@ -261,33 +265,21 @@ class PINNTrainer:
         """
         self.model.train()
         
-        # Create data loader
-        batch_size = self.config['training']['batch_size']
-        dataset_size = len(self.train_data['S'])
-        
-        # Calculate number of batches
-        n_batches = dataset_size // batch_size + (1 if dataset_size % batch_size != 0 else 0)
+        # Use the data loader that was created in load_data
+        n_batches = len(self.train_loader)
         
         # Initialize losses
         epoch_loss = 0
         epoch_data_loss = 0
         epoch_physics_loss = 0
         
-        # Shuffle indices
-        indices = torch.randperm(dataset_size)
-        
         # Train over batches
-        for i in range(n_batches):
-            # Get batch indices
-            start_idx = i * batch_size
-            end_idx = min((i + 1) * batch_size, dataset_size)
-            batch_indices = indices[start_idx:end_idx]
-            
-            # Get batch data
-            S_batch = self.train_data['S'][batch_indices]
-            coords_batch = self.train_data['coords'][batch_indices]
-            t_batch = self.train_data['time'][batch_indices]
-            y_batch = self.train_data['y'][batch_indices]
+        for i, (S_batch, coords_batch, t_batch, y_batch) in enumerate(self.train_loader):
+            # Move to device
+            S_batch = S_batch.to(self.device)
+            coords_batch = coords_batch.to(self.device)
+            t_batch = t_batch.to(self.device)
+            y_batch = y_batch.to(self.device)
             
             # Training step
             losses = self.train_step(S_batch, coords_batch, t_batch, y_batch)
@@ -325,38 +317,31 @@ class PINNTrainer:
         """
         self.model.eval()
         
-        # Create data loader
-        batch_size = self.config['training']['batch_size'] * 2  # Larger batch for validation
-        dataset_size = len(self.val_data['S'])
-        
-        # Calculate number of batches
-        n_batches = dataset_size // batch_size + (1 if dataset_size % batch_size != 0 else 0)
+        # Use the data loader
+        n_batches = len(self.val_loader)
         
         # Initialize loss
         val_loss = 0
         
         with torch.no_grad():
             # Validate over batches
-            for i in range(n_batches):
-                # Get batch indices
-                start_idx = i * batch_size
-                end_idx = min((i + 1) * batch_size, dataset_size)
-                
-                # Get batch data
-                S_batch = self.val_data['S'][start_idx:end_idx]
-                coords_batch = self.val_data['coords'][start_idx:end_idx]
-                t_batch = self.val_data['time'][start_idx:end_idx]
-                y_batch = self.val_data['y'][start_idx:end_idx]
+            for S_batch, coords_batch, t_batch, y_batch in self.val_loader:
+                # Move to device
+                S_batch = S_batch.to(self.device)
+                coords_batch = coords_batch.to(self.device)
+                t_batch = t_batch.to(self.device)
+                y_batch = y_batch.to(self.device)
                 
                 # Forward pass
-                # Ensure input dimensions match model's expected dimensions (9)
+                # Ensure input dimensions match model's expected dimensions
                 combined_input = torch.cat([S_batch, coords_batch, t_batch], dim=1)
+                input_dim = self.config['model']['input_dim']
                 
-                # If dimensions exceed 9, trim the excess dimensions from S_batch
-                if combined_input.shape[1] > 9:
+                # If dimensions exceed expected input_dim, trim the excess dimensions from S_batch
+                if combined_input.shape[1] > input_dim:
                     # Calculate how many dimensions to keep from S_batch
                     # We need to keep coords_batch (3) and t_batch (1) intact
-                    s_dims_to_keep = 9 - coords_batch.shape[1] - t_batch.shape[1]
+                    s_dims_to_keep = input_dim - coords_batch.shape[1] - t_batch.shape[1]
                     # Create a properly sized input tensor
                     model_input = torch.cat([S_batch[:, :s_dims_to_keep], coords_batch, t_batch], dim=1)
                 else:

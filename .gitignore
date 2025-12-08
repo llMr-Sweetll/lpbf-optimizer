@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.env
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project Specific Ignored Files
+# Logs
+*.log
+debug_log.txt
+error_log.txt
+opt_log.txt
+logs/
+
+# Data and Models (Keep raw structure but ignore large files if not tracked)
+# Assuming we want to track directory structure but not heavy binary files
+data/processed/*.h5
+data/models/**/*.pt
+data/optimized/*.h5
+data/optimized/*.csv
+data/optimized/*.png
+data/raw/fea_results/*
+
+# Temporary files
+temp/
+tmp/

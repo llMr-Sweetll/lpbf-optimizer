@@ -1,10 +1,16 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 import numpy as np
 import torch
 from pymoo.core.problem import Problem
 from pymoo.algorithms.moo.nsga3 import NSGA3
 from pymoo.util.ref_dirs import get_reference_directions
 from pymoo.optimize import minimize
-from pymoo.factory import get_sampling, get_crossover, get_mutation
+from pymoo.operators.sampling.rnd import FloatRandomSampling
+from pymoo.operators.crossover.sbx import SBX
+from pymoo.operators.mutation.pm import PM
+
+
 import matplotlib.pyplot as plt
 from pathlib import Path
 import yaml
@@ -42,9 +48,6 @@ class SurrogateProblem(Problem):
         self.n_obj = len(objectives)
         self.objectives = objectives
         
-        # The optimization is unconstrained
-        self.n_constr = 0
-        
         # Store the surrogate model
         self.model = model
         self.device = device
@@ -53,7 +56,7 @@ class SurrogateProblem(Problem):
         super().__init__(
             n_var=self.n_var,
             n_obj=self.n_obj,
-            n_constr=self.n_constr,
+            n_constr=0,
             xl=self.xl,
             xu=self.xu
         )
@@ -209,9 +212,9 @@ class NSGAOptimizer:
         algorithm = NSGA3(
             pop_size=opt_config.get('pop_size', 100),
             ref_dirs=ref_dirs,
-            sampling=get_sampling("real_random"),
-            crossover=get_crossover("real_sbx", prob=0.9, eta=15),
-            mutation=get_mutation("real_pm", eta=20),
+            sampling=FloatRandomSampling(),
+            crossover=SBX(prob=0.9, eta=15),
+            mutation=PM(eta=20),
             eliminate_duplicates=True
         )
         

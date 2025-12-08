@@ -189,38 +189,46 @@ def compute_physics_loss(model, S_batch, coords_batch, t_batch, mat_props, lambd
     """
     # Define a temperature model as a function of coordinates and time
     def temperature_model(x):
-        # Always ensure we're using exactly 9 dimensions for the model input
-        # We need to handle S_batch properly to ensure total dimensions = 9
         # x contains coords (3) + time (1) = 4 dimensions
-        # So S_batch should contribute 5 dimensions
-        if S_batch.shape[1] > 5:  # If S_batch has more than 5 dimensions
-            # Use only the first 5 dimensions of S_batch
-            inp = torch.cat([S_batch[:, :5], x], dim=1)
-        elif S_batch.shape[1] < 5:  # If S_batch has fewer than 5 dimensions
-            # Pad S_batch with zeros to reach 5 dimensions
-            padding = torch.zeros(S_batch.shape[0], 5 - S_batch.shape[1], device=S_batch.device)
-            inp = torch.cat([S_batch, padding, x], dim=1)
-        else:  # S_batch has exactly 5 dimensions
-            inp = torch.cat([S_batch, x], dim=1)
+        # S_batch contains process parameters
+        # We concatenate S_batch and x to get model input
+        input_dim = model.in_dim if hasattr(model, 'in_dim') else 10
+        
+        # Determine how many params to take from S_batch
+        # Start with all params
+        params = S_batch
+        
+        # If total dims would exceed expected, trim parameters (legacy support)
+        # But generally we expect dimensions to match now
+        current_dims = params.shape[1] + x.shape[1]
+        if current_dims > input_dim:
+            params = params[:, :(input_dim - x.shape[1])]
+        
+        inp = torch.cat([params, x], dim=1)
+        
         out = model(inp)
         T = out[:, 0]  # Assuming first output is temperature
         return T.unsqueeze(1)
     
     # Define a stress model as a function of coordinates
     def stress_model(x):
-        # Always ensure we're using exactly 9 dimensions for the model input
-        # We need to handle S_batch properly to ensure total dimensions = 9
         # x contains coords (3) dimensions
-        # So S_batch should contribute 6 dimensions
-        if S_batch.shape[1] > 6:  # If S_batch has more than 6 dimensions
-            # Use only the first 6 dimensions of S_batch
-            inp = torch.cat([S_batch[:, :6], x], dim=1)
-        elif S_batch.shape[1] < 6:  # If S_batch has fewer than 6 dimensions
-            # Pad S_batch with zeros to reach 6 dimensions
-            padding = torch.zeros(S_batch.shape[0], 6 - S_batch.shape[1], device=S_batch.device)
-            inp = torch.cat([S_batch, padding, x], dim=1)
-        else:  # S_batch has exactly 6 dimensions
-            inp = torch.cat([S_batch, x], dim=1)
+        # We need to add time component for the model
+        # Use t_batch if available, otherwise assume final time (1.0)
+        t = t_batch if t_batch is not None else torch.ones(x.shape[0], 1, device=x.device)
+        
+        # Concatenate S_batch, x (coords), and t
+        # Similar parameter handling as temperature_model
+        input_dim = model.in_dim if hasattr(model, 'in_dim') else 10
+        
+        params = S_batch
+        current_dims = params.shape[1] + x.shape[1] + t.shape[1]
+        
+        if current_dims > input_dim:
+            params = params[:, :(input_dim - x.shape[1] - t.shape[1])]
+            
+        inp = torch.cat([params, x, t], dim=1)
+        
         out = model(inp)
         stress = out[:, 1:]  # Assuming remaining outputs are stress components
         return stress

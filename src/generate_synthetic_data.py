@@ -302,14 +302,22 @@ class SyntheticDataGenerator:
         # Generate spatial coordinates
         coords, times = self.generate_coordinates(n_scan_vectors, n_points_per_vector)
         logger.info(f"Generated {len(coords)} coordinate points")
+
+        # Calculate actual points per vector (since grid generation might round down)
+        actual_points_per_vector = len(coords) // n_scan_vectors
         
         # Generate outputs based on physics-informed relations
+        # We need to reshape scan_vectors to match the actual coordinates structure for calculation
+        # The generate_fea_outputs function handles the repetition internally based on lengths
+        # But we need to make sure we pass the right things to it if it expects matching lengths
+        # Checking generate_fea_outputs: it repeats P, v, h, theta based on len(coords) // len(scan_vectors)
+        # So it should be fine as long as len(coords) is divisible by len(scan_vectors), which it is.
         outputs = self.generate_fea_outputs(scan_vectors, coords, times)
         logger.info(f"Generated outputs with shape {outputs.shape}")
         
         # Combine inputs for the neural network
         # Each input is [scan_vector, coordinates, time]
-        scan_vectors_expanded = np.repeat(scan_vectors, n_points_per_vector, axis=0)
+        scan_vectors_expanded = np.repeat(scan_vectors, actual_points_per_vector, axis=0)
         inputs = np.hstack([scan_vectors_expanded, coords, times])
         
         # Split data into train/val/test

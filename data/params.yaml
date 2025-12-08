@@ -18,7 +18,7 @@ material_properties:
 
 # Neural network model configuration
 model:
-  input_dim: 9       # Process parameters + spatial coordinates + time
+  input_dim: 10      # Process parameters + spatial coordinates + time
   output_dim: 3      # Residual stress, porosity, geometric accuracy
   hidden_width: 512  # Width of hidden layers
   hidden_depth: 5    # Number of hidden layers
@@ -33,7 +33,7 @@ data:
   
 # Training configuration
 training:
-  n_epochs: 500
+  n_epochs: 2
   batch_size: 64
   optimizer:
     type: "adam"
@@ -51,7 +51,7 @@ training:
   output_dir: "c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/models"
   plot_freq: 10
   print_freq: 5
-  output_dir: "../data/models"
+
 
 # FEA configuration
 fea:
@@ -66,7 +66,7 @@ fea:
 # Optimizer configuration
 optimizer:
   algorithm: "nsga3"  # or "bayesopt"
-  output_dir: "../data/optimized"
+  output_dir: "c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/optimized"
   
   # Parameter bounds for optimization
   param_bounds:
