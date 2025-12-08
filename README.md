@@ -229,3 +229,29 @@ Check the `data/models/latest/plots/` directory. You will find:
 
 ---
 *Developed for Advanced Manufacturing Research.*
+
+![Let's Connect](https://capsule-render.vercel.app/api?type=rect&color=gradient&height=100&text=Let's%20Connect%20%26%20Collaborate&fontSize=40&animation=fadeIn)
+
+<div align="center">
+
+## llMr-Sweetll
+
+*Carbon-based Life Form*
+
+*AI for Advanced Manufacturing | Digital Twins | Optimization*
+
+Passionate about pioneering the future of AI-driven materials science. Always open to connecting with fellow researchers and engineers to discuss innovative ideas in computational mechanics and machine learning.
+
+[![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/llMr-Sweetll)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/chandrashekhar-hegde)
+[![Email](https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:hegde.g.chandrashekhar@gmail.com)
+
+**Interests**:
+
+`Physics-Informed ML` • `Multi-Objective Optimization` • `Additive Manufacturing` • `Computational Materials Science`
+
+> **"Optimizing the future of manufacturing, one melt pool at a time."**
+
+</div>
+
+---
