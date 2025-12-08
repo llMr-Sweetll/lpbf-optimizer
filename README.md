@@ -121,7 +121,7 @@ We utilize **Monte Carlo Dropout** (Gal & Ghahramani, 2016) to approximate the B
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-lab/lpbf-optimizer.git
+git clone https://github.com/llMr-Sweetll/lpbf-optimizer.git
 cd lpbf-optimizer
 
 # 2. Install dependencies
