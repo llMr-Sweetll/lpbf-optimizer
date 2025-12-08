@@ -1,6 +1,6 @@
-# LPBF-Optimizer: Physics-Informed Digital Twin for Additive Manufacturing
-
 ![Header](https://capsule-render.vercel.app/api?type=waving&color=gradient&height=250&section=header&text=LPBF-Optimizer&fontSize=80&animation=fadeIn&fontAlignY=35&desc=Physics-Informed%20Digital%20Twin%20for%20AM&descSize=25&descAlignY=55)
+
+# LPBF-Optimizer: Physics-Informed Digital Twin for Additive Manufacturing
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg?style=for-the-badge&logo=python&logoColor=white)
@@ -174,8 +174,7 @@ pip install -r requirements.txt
 
 ### ⚠️ Common Troubleshooting (Click to Expand)
 
-<details>
-<summary><strong>Issue: OMP: Error #15: Initializing libiomp5md.dll</strong></summary>
+#### Issue: OMP: Error #15: Initializing libiomp5md.dll
 
 * **Cause**: Conflict between PyTorch and NumPy OpenMP libraries on Windows.
 * **Fix**: This project automatically handles this by setting `KMP_DUPLICATE_LIB_OK=TRUE` internally. If you still see this, run:
@@ -184,10 +183,7 @@ pip install -r requirements.txt
     set KMP_DUPLICATE_LIB_OK=TRUE
     ```
 
-</details>
-
-<details>
-<summary><strong>Issue: CUDA out of memory</strong></summary>
+#### Issue: CUDA out of memory
 
 * **Fix**: Reduce batch size in `data/params.yaml`:
 
@@ -195,8 +191,6 @@ pip install -r requirements.txt
     training:
       batch_size: 2048  # Try reducing to 1024 or 512
     ```
-
-</details>
 
 ---
 
@@ -230,8 +224,6 @@ Check the `data/models/latest/plots/` directory. You will find:
 ---
 *Developed for Advanced Manufacturing Research.*
 
-![Let's Connect](https://capsule-render.vercel.app/api?type=rect&color=gradient&height=100&text=Let's%20Connect%20%26%20Collaborate&fontSize=40&animation=fadeIn)
-
 <div align="center">
 
 ## llMr-Sweetll
@@ -255,3 +247,4 @@ Passionate about pioneering the future of AI-driven materials science. Always op
 </div>
 
 ---
+![Let's Connect](https://capsule-render.vercel.app/api?type=waving&color=gradient&height=100&section=footer&text=Let's%20Connect&fontSize=30)
