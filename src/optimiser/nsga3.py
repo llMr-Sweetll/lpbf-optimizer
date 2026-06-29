@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import yaml
 import h5py
-import os
 
 
 class SurrogateProblem(Problem):
@@ -89,16 +88,15 @@ class SurrogateProblem(Problem):
             model_input = torch.cat([x_tensor, coords, time], dim=1)
             predictions = self.model(model_input)
         
-        # Extract objective values (note: for minimization, so we might need to negate some)
-        # We'll keep residual stress and porosity as is (minimize)
-        # But for geometric accuracy ratio (GAR), higher is better, so we negate
-        objectives = predictions.cpu().numpy()
-        
-        # Set the objective values for pymoo
+        # Extract objective values. Residual stress and porosity are minimised.
+        # Geometric accuracy is maximised in reality, so we negate it for pymoo.
+        objectives = predictions.cpu().numpy().copy()
+        for i, name in enumerate(self.objectives):
+            if name == 'geometric_accuracy':
+                objectives[:, i] = -objectives[:, i]
+
         out["F"] = objectives
-        
-        # For visualization, we might also want to return the predicted values directly
-        out["prediction"] = objectives
+        out["prediction"] = predictions.cpu().numpy()
 
 
 class NSGAOptimizer:
@@ -146,8 +144,9 @@ class NSGAOptimizer:
         """
         # Import the model class here to avoid circular imports
         import sys
-        import os
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'pinn'))
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(repo_root / 'src' / 'pinn'))
         from model import PINN
         
         # Create model with same architecture as during training
@@ -321,12 +320,11 @@ class NSGAOptimizer:
             plt.close()
         
         # Plot parallel coordinates for more than 3 objectives
-        from pymoo.visualization.pcp import PCP
-        pcp = PCP(tight_layout=True, legend=(True, {'loc': 'upper left'}))
-        pcp.add(F, color="navy")
-        pcp.show()
-        plt.savefig(self.output_dir / 'pareto_pcp.png')
-        plt.close()
+        if F.shape[1] >= 2:
+            from pymoo.visualization.pcp import PCP
+            pcp = PCP(tight_layout=True, legend=(True, {'loc': 'upper left'}))
+            pcp.add(F, color="navy")
+            pcp.save(self.output_dir / 'pareto_pcp.png')
         
         # Plot the convergence
         n_gen = len(res.history)
@@ -353,7 +351,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Run NSGA-III optimization with PINN surrogate')
-    parser.add_argument('--config', type=str, default='../../data/params.yaml',
+    parser.add_argument('--config', type=str, default='data/params.yaml',
                         help='Path to configuration file')
     parser.add_argument('--model', type=str, required=True,
                         help='Path to trained PINN model checkpoint')
