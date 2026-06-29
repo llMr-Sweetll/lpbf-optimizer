@@ -87,6 +87,11 @@ class BayesianOptimizer:
         Returns:
             Evaluation function for Ax
         """
+        # Determine objective direction. BayesOpt always minimizes, so we negate
+        # objectives that should be maximized (e.g., geometric_accuracy).
+        objective_name = self.config['optimizer']['objectives'][objective_idx]
+        maximize = objective_name == 'geometric_accuracy'
+
         # Define the evaluation function
         def evaluate(parameters):
             # Convert parameters to tensor
@@ -105,6 +110,8 @@ class BayesianOptimizer:
             
             # Extract target objective value
             obj_value = predictions[0, objective_idx].item()
+            if maximize:
+                obj_value = -obj_value
             
             # For stochastic models, we could return SEM, but our surrogate is deterministic
             return {"objective": (obj_value, 0.0)}
@@ -236,21 +243,28 @@ class BayesianOptimizer:
         csv_path = self.output_dir / f"bayesopt_{objective_name}.csv"
         df.to_csv(csv_path, index=False)
         
-        # Extract parameters and objective values
+        # Extract parameters and objective values. Ax's dataframe format changed,
+        # so we read arm parameters directly from the experiment trials.
+        maximize = objective_name == 'geometric_accuracy'
         parameters = []
         objective_values = []
-        
+
         for _, row in df.iterrows():
-            params = {}
-            for param in self.param_names:
-                params[param] = row[f"arm_parameters.{param}"]
-            parameters.append(list(params.values()))
+            trial_index = int(row["trial_index"])
+            arm = experiment.trials[trial_index].arm
+            params = [arm.parameters[p] for p in self.param_names]
+            parameters.append(params)
             objective_values.append(row["mean"])
-        
+
         # Convert to numpy arrays
         X = np.array(parameters)
         Y = np.array(objective_values).reshape(-1, 1)
-        
+
+        # For maximized objectives, the optimizer worked on the negated value;
+        # restore the original sign for reporting.
+        if maximize:
+            Y = -Y
+
         # Save to HDF5
         with h5py.File(self.output_dir / f"bayesopt_{objective_name}.h5", 'w') as f:
             # Save process parameters
@@ -264,29 +278,37 @@ class BayesianOptimizer:
             # Save objective name
             obj_name = np.array([objective_name], dtype=object)
             f.create_dataset('objective_names', data=obj_name, dtype=dt)
-            
+
             # Store metadata
             f.attrs['n_trials'] = len(X)
             f.attrs['n_parameters'] = X.shape[1]
-            f.attrs['best_objective'] = Y.min()
-            
+            best_objective = Y.max() if maximize else Y.min()
+            f.attrs['best_objective'] = best_objective
+
             # Store best parameters
-            best_idx = Y.argmin()
+            best_idx = Y.argmax() if maximize else Y.argmin()
             f.attrs['best_params'] = X[best_idx]
-        
+
         # Generate plots
-        self._plot_convergence(df, objective_name)
+        self._plot_convergence(df, objective_name, maximize=maximize)
     
-    def _plot_convergence(self, df, objective_name):
+    def _plot_convergence(self, df, objective_name, maximize=False):
         """
         Plot optimization convergence
-        
+
         Args:
             df: DataFrame with optimization data
             objective_name: Name of the objective
+            maximize: Whether the objective is maximized (e.g., geometric_accuracy).
         """
         plt.figure(figsize=(10, 6))
-        best_so_far = np.minimum.accumulate(df['mean'])
+        objective = df['mean'].values
+        if maximize:
+            # The optimizer minimized -objective, so restore the original metric.
+            objective = -objective
+            best_so_far = np.maximum.accumulate(objective)
+        else:
+            best_so_far = np.minimum.accumulate(objective)
         plt.plot(range(1, len(best_so_far) + 1), best_so_far)
         plt.xlabel('Trial')
         plt.ylabel(f'Best {objective_name} so far')
