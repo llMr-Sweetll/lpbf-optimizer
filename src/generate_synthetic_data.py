@@ -163,9 +163,13 @@ class SyntheticDataGenerator:
         v = np.repeat(v, points_per_sample)
         h = np.repeat(h, points_per_sample)
         theta = np.repeat(theta, points_per_sample)
-        
-        # Calculate energy density (J/mm³)
-        energy_density = P / (v * h)
+
+        # Use the last parameter column as layer thickness (consistent with config).
+        layer_thickness = scan_vectors[:, -1]
+        layer_thickness = np.repeat(layer_thickness, points_per_sample)
+
+        # Calculate volumetric energy density (J/mm³)
+        energy_density = P / (v * h * layer_thickness)
         
         # Calculate cooling rate (simplified)
         # In reality, this would be based on heat equation solution
