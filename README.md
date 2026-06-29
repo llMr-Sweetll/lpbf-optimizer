@@ -251,6 +251,16 @@ python src/vis/animate_training_metrics.py
 
 ---
 
+## 📚 Documentation
+
+- [`docs/research/literature-survey.md`](docs/research/literature-survey.md) — comprehensive literature survey on PINNs, uncertainty quantification, multi-objective Bayesian optimisation, digital twins, and CFD/grain-structure coupling for LPBF.
+- [`docs/references.bib`](docs/references.bib) — BibTeX references for the literature survey.
+- [`docs/adr/`](docs/adr/) — Architecture Decision Records.
+- [`docs/scientific_workflow.md`](docs/scientific_workflow.md) — end-to-end scientific workflow.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contributor guidelines.
+
+---
+
 ## 📖 Citation
 
 If you use **LPBF-Optimizer** in your research, publications, conference papers, or technical reports, please cite it as follows:
@@ -263,14 +273,14 @@ If you use **LPBF-Optimizer** in your research, publications, conference papers,
   title = {{LPBF-Optimizer}: Physics-Informed Digital Twin for Additive Manufacturing},
   year = {2026},
   url = {https://github.com/llMr-Sweetll/lpbf-optimizer},
-  version = {0.1.0},
+  version = {0.2.0},
   note = {Research prototype}
 }
 ```
 
 ### APA
 
-Hegde, C. (2026). *LPBF-Optimizer: Physics-Informed Digital Twin for Additive Manufacturing* (Version 0.1.0) [Computer software]. https://github.com/llMr-Sweetll/lpbf-optimizer
+Hegde, C. (2026). *LPBF-Optimizer: Physics-Informed Digital Twin for Additive Manufacturing* (Version 0.2.0) [Computer software]. https://github.com/llMr-Sweetll/lpbf-optimizer
 
 ### IEEE
 
