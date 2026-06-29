@@ -1,15 +1,15 @@
-import pytest
-import torch
-
 import sys
 from pathlib import Path
+
+import pytest
+import torch
 
 # Add src/pinn to the path so the standalone modules can be imported.
 repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(repo_root / "src" / "pinn"))
 
-from model import PINN
-from physics import compute_physics_loss
+from model import PINN  # noqa: E402
+from physics import compute_physics_loss  # noqa: E402
 
 
 @pytest.fixture

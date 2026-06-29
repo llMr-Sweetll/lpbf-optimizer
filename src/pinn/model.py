@@ -6,7 +6,7 @@ class PINN(nn.Module):
     """
     Physics-Informed Neural Network for predicting LPBF process outcomes
     (residual stress, porosity, geometric accuracy) from process parameters.
-    
+
     Args:
         in_dim (int): Total input dimension (process parameters + spatial coordinates + time)
         out_dim (int): Output dimension (number of predicted outcomes)
@@ -55,14 +55,14 @@ class PINN(nn.Module):
 
         self.hidden = nn.Sequential(*layers)
         self.out = nn.Linear(width, output_dim)
-        
+
     def forward(self, S):
         """
         Forward pass through the network
-        
+
         Args:
             S (torch.Tensor): Process parameter tensor [batch_size, in_dim]
-        
+
         Returns:
             torch.Tensor: Predicted outcomes [batch_size, out_dim]
         """
@@ -71,18 +71,18 @@ class PINN(nn.Module):
     def predict_with_uncertainty(self, x, num_samples=100):
         """
         Perform Monte Carlo Dropout inference to estimate predictive uncertainty.
-        
+
         Reference:
             Gal, Y., & Ghahramani, Z. (2016). Dropout as a Bayesian Approximation. ICML.
-            
+
             For relevance to Additive Manufacturing (AM):
             [1] Zhao, Mirihanage, et al. (2025). "Revealing melt flow instabilities in LPBF".
-            [2] "Physics-Informed Neural Networks for Additive Manufacturing: A Review" (2025). 
-        
+            [2] "Physics-Informed Neural Networks for Additive Manufacturing: A Review" (2025).
+
         Args:
             x (torch.Tensor): Input tensor
             num_samples (int): Number of stochastic forward passes
-            
+
         Returns:
             tuple: (mean_prediction, std_deviation)
         """

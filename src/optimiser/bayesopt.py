@@ -1,10 +1,11 @@
+import time
+from pathlib import Path
+
+import h5py
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
-from pathlib import Path
-import matplotlib.pyplot as plt
-import h5py
-import time
 
 # For Bayesian optimization with Ax/BoTorch
 from ax.service.managed_loop import optimize
@@ -13,16 +14,16 @@ from ax.service.managed_loop import optimize
 class BayesianOptimizer:
     """
     Bayesian optimization for LPBF process parameter tuning using the PINN surrogate model.
-    
+
     This optimizer uses Ax/BoTorch which implements Bayesian Optimization with
     Thompson sampling. It's useful for more efficiently exploring the parameter space
     compared to genetic algorithms when the number of evaluations is limited.
     """
-    
+
     def __init__(self, config_path, model_path):
         """
         Initialize the Bayesian optimizer
-        
+
         Args:
             config_path: Path to the configuration file
             model_path: Path to the trained PINN model checkpoint
@@ -30,24 +31,24 @@ class BayesianOptimizer:
         # Load configuration
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
-        
+
         # Set device
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        
+
         # Load the trained PINN model
         self.model = self._load_model(model_path)
-        
+
         # Output directory
         self.output_dir = Path(self.config['optimizer']['output_dir'])
         self.output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     def _load_model(self, model_path):
         """
         Load the trained PINN model
-        
+
         Args:
             model_path: Path to model checkpoint
-            
+
         Returns:
             Loaded PINN model
         """
@@ -57,7 +58,7 @@ class BayesianOptimizer:
         repo_root = Path(__file__).resolve().parents[2]
         sys.path.insert(0, str(repo_root / 'src' / 'pinn'))
         from model import PINN
-        
+
         # Create model with same architecture as during training
         model_config = self.config['model']
         model = PINN(
@@ -66,24 +67,24 @@ class BayesianOptimizer:
             width=model_config['hidden_width'],
             depth=model_config['hidden_depth']
         )
-        
+
         # Load weights
         checkpoint = torch.load(model_path, map_location=self.device)
         model.load_state_dict(checkpoint['model_state_dict'])
-        
+
         # Set to evaluation mode
         model.eval()
         model = model.to(self.device)
-        
+
         return model
-    
+
     def _create_evaluation_function(self, objective_idx=0):
         """
         Create an evaluation function for the objective
-        
+
         Args:
             objective_idx: Index of the objective to optimize (default: 0 for residual stress)
-        
+
         Returns:
             Evaluation function for Ax
         """
@@ -97,38 +98,38 @@ class BayesianOptimizer:
             # Convert parameters to tensor
             param_values = [parameters[p] for p in self.param_names]
             x = torch.tensor([param_values], dtype=torch.float32, device=self.device)
-            
+
             # Add dummy spatial coordinates and time
             batch_size = x.shape[0]
             coords = torch.zeros(batch_size, 3, device=self.device)  # Origin point
             time = torch.ones(batch_size, 1, device=self.device)     # Final time step
-            
+
             # Forward pass through the model
             with torch.no_grad():
                 model_input = torch.cat([x, coords, time], dim=1)
                 predictions = self.model(model_input)
-            
+
             # Extract target objective value
             obj_value = predictions[0, objective_idx].item()
             if maximize:
                 obj_value = -obj_value
-            
+
             # For stochastic models, we could return SEM, but our surrogate is deterministic
             return {"objective": (obj_value, 0.0)}
-        
+
         return evaluate
-    
+
     def _create_params_and_objectives(self):
         """
         Create parameters and objectives definitions for Ax
-        
+
         Returns:
             Tuple of parameters and objectives lists for Ax
         """
         # Get parameter bounds
         param_bounds = self.config['optimizer']['param_bounds']
         self.param_names = list(param_bounds.keys())
-        
+
         # Define parameters
         parameters = []
         for name in self.param_names:
@@ -139,7 +140,7 @@ class BayesianOptimizer:
                 "bounds": bounds,
                 "value_type": "float"
             })
-        
+
         # Define objective - for Bayesian optimization we typically
         # focus on one objective at a time
         objective_name = self.config['optimizer']['objectives'][0]
@@ -152,34 +153,34 @@ class BayesianOptimizer:
                 }
             }
         ]
-        
+
         return parameters, objectives
-    
+
     def run_single_objective_optimization(self, objective_idx=0, n_trials=50):
         """
         Run Bayesian optimization for a single objective
-        
+
         Args:
             objective_idx: Index of the objective to optimize
             n_trials: Number of trials to run
-            
+
         Returns:
             Optimization results
         """
         # Create parameters and objectives definitions
         parameters, objectives = self._create_params_and_objectives()
-        
+
         # Get the objective name
         objective_name = self.config['optimizer']['objectives'][objective_idx]
         print(f"Optimizing for {objective_name}")
-        
+
         # Create evaluation function
         evaluation_function = self._create_evaluation_function(objective_idx)
-        
+
         # Run optimization
         print(f"Running Bayesian optimization with {n_trials} trials...")
         start_time = time.time()
-        
+
         best_parameters, values, experiment, model = optimize(
             parameters=parameters,
             evaluation_function=evaluation_function,
@@ -188,48 +189,48 @@ class BayesianOptimizer:
             total_trials=n_trials,
             random_seed=self.config['optimizer'].get('seed', 42)
         )
-        
+
         end_time = time.time()
         print(f"Optimization completed in {end_time - start_time:.2f} seconds")
-        
+
         # Print results
         print("\nBest parameters:")
         for param, value in best_parameters.items():
             print(f"  {param}: {value}")
         print(f"Best objective value: {values[0]['objective']}")
-        
+
         # Save results
         self._save_results(experiment, model, objective_name)
-        
+
         return best_parameters, values, experiment, model
-    
+
     def run_multi_objective_optimization(self, n_trials=50):
         """
         Run a series of single-objective optimizations for each objective
-        
+
         This is a simple approach to multi-objective optimization with Bayesian methods.
         For more sophisticated approaches, MOO extensions to BoTorch could be used.
-        
+
         Args:
             n_trials: Number of trials per objective
-            
+
         Returns:
             List of results for each objective
         """
         objectives = self.config['optimizer']['objectives']
         results = []
-        
+
         for i, obj_name in enumerate(objectives):
             print(f"\nOptimizing for objective {i+1}/{len(objectives)}: {obj_name}")
             result = self.run_single_objective_optimization(i, n_trials)
             results.append(result)
-        
+
         return results
-    
+
     def _save_results(self, experiment, model, objective_name):
         """
         Save optimization results
-        
+
         Args:
             experiment: Ax experiment
             model: Ax model
@@ -238,11 +239,11 @@ class BayesianOptimizer:
         # Get the data from the experiment
         data = experiment.fetch_data()
         df = data.df
-        
+
         # Save raw data to CSV
         csv_path = self.output_dir / f"bayesopt_{objective_name}.csv"
         df.to_csv(csv_path, index=False)
-        
+
         # Extract parameters and objective values. Ax's dataframe format changed,
         # so we read arm parameters directly from the experiment trials.
         maximize = objective_name == 'geometric_accuracy'
@@ -291,7 +292,7 @@ class BayesianOptimizer:
 
         # Generate plots
         self._plot_convergence(df, objective_name, maximize=maximize)
-    
+
     def _plot_convergence(self, df, objective_name, maximize=False):
         """
         Plot optimization convergence
@@ -316,11 +317,11 @@ class BayesianOptimizer:
         plt.grid(True)
         plt.savefig(self.output_dir / f"bayesopt_convergence_{objective_name}.png")
         plt.close()
-    
+
 def main():
     """Main function to run Bayesian optimization"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Run Bayesian optimization with PINN surrogate')
     parser.add_argument('--config', type=str, default='data/params.yaml',
                         help='Path to configuration file')
@@ -332,18 +333,18 @@ def main():
                         help='Number of optimization trials')
     parser.add_argument('--multi', action='store_true',
                         help='Run multi-objective optimization (sequential)')
-    
+
     args = parser.parse_args()
-    
+
     # Create optimizer
     optimizer = BayesianOptimizer(args.config, args.model)
-    
+
     # Run optimization
     if args.multi:
-        results = optimizer.run_multi_objective_optimization(args.trials)
+        optimizer.run_multi_objective_optimization(args.trials)
     else:
-        results = optimizer.run_single_objective_optimization(args.objective, args.trials)
-    
+        optimizer.run_single_objective_optimization(args.objective, args.trials)
+
     # Print summary
     print("\nOptimization complete!")
     print(f"Results saved to: {optimizer.output_dir}")
