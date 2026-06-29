@@ -1,14 +1,13 @@
-import pytest
-import torch
-
 import sys
 from pathlib import Path
+
+import torch
 
 # Add src/pinn to the path so the standalone modules can be imported.
 repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(repo_root / "src" / "pinn"))
 
-from model import PINN
+from model import PINN  # noqa: E402
 
 
 def test_pinn_forward_shape():
@@ -47,3 +46,24 @@ def test_predict_with_uncertainty_preserves_training_mode():
     model.eval()
     model.predict_with_uncertainty(x, num_samples=5)
     assert model.training is False
+
+
+def test_default_input_dimension():
+    """Default PINN constructor should match the project config (10 inputs, 3 outputs)."""
+    model = PINN()
+    assert model.in_dim == 10
+    x = torch.rand(4, 10)
+    y = model(x)
+    assert y.shape == (4, 3)
+
+
+def test_predict_with_uncertainty_returns_finite_std():
+    """MC Dropout should return finite means and non-negative standard deviations."""
+    model = PINN(in_dim=10, out_dim=3, dropout_rate=0.1)
+    x = torch.rand(8, 10)
+    mean, std = model.predict_with_uncertainty(x, num_samples=10)
+    assert mean.shape == (8, 3)
+    assert std.shape == (8, 3)
+    assert torch.all(std >= 0)
+    assert torch.all(torch.isfinite(mean))
+    assert torch.all(torch.isfinite(std))
