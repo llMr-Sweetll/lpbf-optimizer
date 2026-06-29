@@ -59,7 +59,7 @@
 
 ### Physics Loss
 - Enforces physical constraints
-- Scaled by lambda parameters (heat: λ=${config.lambda_heat}, stress: λ=${config.lambda_stress})
+- Scaled by lambda parameters configured under `training.lambda_heat`, `training.lambda_stress`, `training.lambda_porosity`, and `training.lambda_geometry`
 - Healthy ratio: 0.1-10% of data loss
 
 ## Convergence Monitoring
