@@ -64,7 +64,8 @@ fea:
   solver_type: "abaqus"
   abaqus_path: "abaqus"
   comsol_path: "comsol"
-  comsol_java_path: "/Applications/COMSOL55/Multiphysics/plugins/org.comsol.model.jarfile/model.jar"
+  # Must be configured to the local COMSOL Java model jar before use.
+  comsol_java_path: ""
   template_path: "data/templates/lpbf_template.inp"
   output_dir: "data/raw/fea_results"
   n_cpus: 4
