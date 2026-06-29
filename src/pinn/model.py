@@ -2,18 +2,38 @@ import torch
 import torch.nn as nn
 
 
+# Default physical ranges for the LPBF quality metrics predicted by the model.
+# These bounds are used when ``apply_output_bounds=True`` and no custom bounds
+# are supplied.  The ranges match the synthetic data generator and are wide
+# enough to cover typical Ti-6Al-4V LPBF parts.
+_DEFAULT_OUTPUT_BOUNDS = (
+    (50.0, 800.0),    # residual stress (MPa)
+    (0.0, 0.30),      # porosity (volume fraction)
+    (0.7, 1.0),       # geometric accuracy (ratio)
+)
+
+
 class PINN(nn.Module):
     """
     Physics-Informed Neural Network for predicting LPBF process outcomes
     (residual stress, porosity, geometric accuracy) from process parameters.
 
     Args:
-        in_dim (int): Total input dimension (process parameters + spatial coordinates + time)
-        out_dim (int): Output dimension (number of predicted outcomes)
+        input_dim (int): Total input dimension (process parameters + spatial coordinates + time)
+        output_dim (int): Output dimension (number of predicted outcomes)
         width (int): Width of hidden layers
         depth (int): Number of hidden layers
+        dropout_rate (float): Dropout rate for MC Dropout.
+        apply_output_bounds (bool): If True, squash each output into a physical
+            range via a sigmoid transform.
+        output_bounds (sequence of tuple, optional): ``(min, max)`` pairs for
+            each output dimension.  Defaults to ``_DEFAULT_OUTPUT_BOUNDS`` when
+            ``apply_output_bounds`` is True.
+        in_dim (int, optional): Backward-compatible alias for ``input_dim``.
+        out_dim (int, optional): Backward-compatible alias for ``output_dim``.
     """
     def __init__(self, input_dim=10, output_dim=3, width=512, depth=5, dropout_rate=0.1,
+                 apply_output_bounds=False, output_bounds=None,
                  in_dim=None, out_dim=None):
         """
         Initialize the PINN model.
@@ -25,6 +45,8 @@ class PINN(nn.Module):
             depth (int): Number of hidden layers
             dropout_rate (float): Dropout rate for MC Dropout (Gal & Ghahramani, 2016).
                                 Default 0.1 is common for regression tasks.
+            apply_output_bounds (bool): If True, constrain outputs to physical ranges.
+            output_bounds (sequence of tuple, optional): Per-output (min, max) bounds.
             in_dim (int, optional): Backward-compatible alias for ``input_dim``.
             out_dim (int, optional): Backward-compatible alias for ``output_dim``.
         """
@@ -42,6 +64,21 @@ class PINN(nn.Module):
         # Preserve legacy attribute for callers that rely on it.
         self.in_dim = input_dim
 
+        self.apply_output_bounds = apply_output_bounds
+        if apply_output_bounds:
+            bounds = output_bounds if output_bounds is not None else _DEFAULT_OUTPUT_BOUNDS
+            if len(bounds) != output_dim:
+                raise ValueError(
+                    f"output_bounds length ({len(bounds)}) must match output_dim ({output_dim})"
+                )
+            mins = torch.tensor([b[0] for b in bounds], dtype=torch.float32)
+            maxs = torch.tensor([b[1] for b in bounds], dtype=torch.float32)
+            self.register_buffer('output_mins', mins)
+            self.register_buffer('output_maxs', maxs)
+        else:
+            self.register_buffer('output_mins', None)
+            self.register_buffer('output_maxs', None)
+
         # Build the network with SiLU activation and Dropout
         layers = []
         layers.append(nn.Linear(input_dim, width))
@@ -58,15 +95,33 @@ class PINN(nn.Module):
 
     def forward(self, S):
         """
-        Forward pass through the network
+        Forward pass through the network.
 
         Args:
-            S (torch.Tensor): Process parameter tensor [batch_size, in_dim]
+            S (torch.Tensor): Process parameter tensor [batch_size, input_dim]
 
         Returns:
-            torch.Tensor: Predicted outcomes [batch_size, out_dim]
+            torch.Tensor: Predicted outcomes [batch_size, output_dim]
         """
-        return self.out(self.hidden(S))
+        raw = self.out(self.hidden(S))
+        if self.apply_output_bounds:
+            # Map each raw logit to the configured [min, max] interval.
+            return self.output_mins + (self.output_maxs - self.output_mins) * torch.sigmoid(raw)
+        return raw
+
+    def get_output_bounds(self):
+        """
+        Return the per-output physical bounds.
+
+        Returns:
+            tuple: ``((min_0, max_0), ...)`` when bounds are enabled, else ``None``.
+        """
+        if not self.apply_output_bounds:
+            return None
+        return tuple(
+            (float(self.output_mins[i]), float(self.output_maxs[i]))
+            for i in range(len(self.output_mins))
+        )
 
     def predict_with_uncertainty(self, x, num_samples=100):
         """
