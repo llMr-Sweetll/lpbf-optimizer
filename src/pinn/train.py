@@ -12,7 +12,6 @@ import h5py
 from pathlib import Path
 
 from model import PINN
-from model import PINN
 from physics import compute_physics_loss
 from loss_balancer import AdaptiveLossBalancer
 
@@ -41,7 +40,11 @@ class PINNTrainer:
         torch.set_num_interop_threads(self.num_threads)
 
         # Set device
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device_cfg = self.config['training'].get('device', 'auto')
+        if device_cfg == 'cuda' or (device_cfg == 'auto' and torch.cuda.is_available()):
+            self.device = torch.device('cuda')
+        else:
+            self.device = torch.device('cpu')
         print(f"Using device: {self.device}")
         
         # Load material properties
@@ -56,8 +59,8 @@ class PINNTrainer:
         # Set up optimizer
         self.optimizer = self._build_optimizer()
         
-        # Initialize Adaptive Loss Balancer (Weights: Data, Heat, Stress)
-        self.loss_balancer = AdaptiveLossBalancer(num_losses=3, alpha=self.config['training'].get('balancer_alpha', 1.5))
+        # Initialize Adaptive Loss Balancer (Weights: Data, Heat, Stress, Mechanical)
+        self.loss_balancer = AdaptiveLossBalancer(num_losses=4, alpha=self.config['training'].get('balancer_alpha', 1.5))
         
         # Set up learning rate scheduler
         self.scheduler = self._build_scheduler()
@@ -68,7 +71,7 @@ class PINNTrainer:
             'val_loss': [],
             'data_loss': [],
             'physics_loss': [],
-            'loss_weights': {'data': [], 'heat': [], 'stress': []}
+            'loss_weights': {'data': [], 'heat': [], 'stress': [], 'mechanical': []}
         }
         
         # Current epoch
@@ -87,10 +90,33 @@ class PINNTrainer:
         self.checkpoint_dir.mkdir(exist_ok=True)
         self.log_dir.mkdir(exist_ok=True)
         self.plot_dir.mkdir(exist_ok=True)
+
+        # Create/update a stable symlink to the latest run
+        latest_link = Path(self.config['training']['output_dir']) / 'latest'
+        if latest_link.exists() or latest_link.is_symlink():
+            latest_link.unlink()
+        try:
+            latest_link.symlink_to(self.run_dir.resolve(), target_is_directory=True)
+        except OSError:
+            # Symlinks may not be supported on all platforms (e.g. Windows without dev mode)
+            pass
         
         # Save config to run directory
         with open(self.run_dir / 'config.yaml', 'w') as f:
             yaml.dump(self.config, f)
+
+    @staticmethod
+    def _build_model_input(S_batch, coords_batch, t_batch, input_dim):
+        """Build model input, trimming parameter dims if they exceed input_dim."""
+        combined = torch.cat([S_batch, coords_batch, t_batch], dim=1)
+        if combined.shape[1] > input_dim:
+            s_keep = input_dim - coords_batch.shape[1] - t_batch.shape[1]
+            if s_keep < 0:
+                raise ValueError(
+                    f"input_dim ({input_dim}) is smaller than coord ({coords_batch.shape[1]}) + time ({t_batch.shape[1]}) dims"
+                )
+            return torch.cat([S_batch[:, :s_keep], coords_batch, t_batch], dim=1)
+        return combined
     
     def _build_model(self):
         """Initialize the PINN model"""
@@ -124,7 +150,7 @@ class PINNTrainer:
         if not sched_config or sched_config.get('type', '').lower() == 'none':
             return None
         
-        if sched_config['type'].lower() == 'reducelronplateau':
+        if sched_config['type'].lower() in ('reduce_lr_on_plateau', 'reducelronplateau'):
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                 self.optimizer,
                 mode='min',
@@ -166,135 +192,114 @@ class PINNTrainer:
             y_val = torch.tensor(f['val/outputs'][:], dtype=torch.float32)
         
         # Move data to device
+        import platform
+        num_workers = self.config['training'].get('num_workers', None)
+        if num_workers is None:
+            num_workers = 0 if platform.system() == 'Darwin' else self.num_threads
+        pin_memory = self.device.type == 'cuda'
+        persistent = num_workers > 0
+
         train_dataset = torch.utils.data.TensorDataset(S_train, coords_train, time_train, y_train)
         self.train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=self.config['training']['batch_size'],
             shuffle=True,
-            num_workers=self.num_threads,
-            pin_memory=True,
-            persistent_workers=True
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=persistent
         )
         
         val_dataset = torch.utils.data.TensorDataset(S_val, coords_val, time_val, y_val)
         self.val_loader = torch.utils.data.DataLoader(
             val_dataset,
             batch_size=self.config['training']['batch_size'],
-            num_workers=self.num_threads,
-            pin_memory=True,
-            persistent_workers=True
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=persistent
         )
         
         print(f"Loaded {len(S_train)} training samples and {len(S_val)} validation samples")
     
     def train_step(self, S_batch, coords_batch, t_batch, y_batch):
-        """
-        Perform one training step
-        
-        Args:
-            S_batch: Process parameters batch
-            coords_batch: Spatial coordinates batch
-            t_batch: Time coordinates batch
-            y_batch: Ground truth outputs batch
-        
-        Returns:
-            dict: Loss components
-        """
         self.optimizer.zero_grad()
-        
-        # Forward pass
-        # Ensure input dimensions match model's expected dimensions
-        print(f"DEBUG: S_batch shape: {S_batch.shape}")
-        print(f"DEBUG: coords_batch shape: {coords_batch.shape}")
-        print(f"DEBUG: t_batch shape: {t_batch.shape}")
-        combined_input = torch.cat([S_batch, coords_batch, t_batch], dim=1)
-        print(f"DEBUG: combined_input shape: {combined_input.shape}")
+
         input_dim = self.config['model']['input_dim']
-        
-        # If dimensions exceed expected input_dim, trim the excess dimensions from S_batch
-        if combined_input.shape[1] > input_dim:
-            # Calculate how many dimensions to keep from S_batch
-            # We need to keep coords_batch (3) and t_batch (1) intact
-            s_dims_to_keep = input_dim - coords_batch.shape[1] - t_batch.shape[1]
-            # Create a properly sized input tensor
-            model_input = torch.cat([S_batch[:, :s_dims_to_keep], coords_batch, t_batch], dim=1)
-        else:
-            model_input = combined_input
-            
+        model_input = self._build_model_input(S_batch, coords_batch, t_batch, input_dim)
         y_pred = self.model(model_input)
-        
-        # Compute losses (Data, Heat, Stress)
-        # Note: We need component-wise physics losses for the balancer
-        
-        # Data loss
+
         mse_loss = nn.MSELoss()
         data_loss = mse_loss(y_pred, y_batch)
-        
-        # Physics loss components
-        heat_loss, stress_loss = compute_physics_loss(
-            self.model, 
-            S_batch, 
-            coords_batch, 
-            t_batch, 
+
+        heat_loss, stress_loss, porosity_loss, geometry_loss = compute_physics_loss(
+            self.model,
+            S_batch,
+            coords_batch,
+            t_batch,
             self.mat_props,
-            return_components=True
+            return_components=True,
         )
-        
-        # Update loss weights using Adaptive Loss Balancer
-        # We need the last shared layer parameters for gradient computation
-        # Typically the last layer of the shared encoder before task-specific heads
-        # In our PINN, self.model.hidden[-1] is the last linear layer of the shared trunk
+
+        train_cfg = self.config['training']
+        lambda_heat = train_cfg.get('lambda_heat', 0.1)
+        lambda_stress = train_cfg.get('lambda_stress', 0.1)
+        lambda_porosity = train_cfg.get('lambda_porosity', 0.05)
+        lambda_geometry = train_cfg.get('lambda_geometry', 0.05)
+
+        # Shared parameter for GradNorm (last hidden layer weight matrix)
         shared_params = list(self.model.hidden[-1].parameters())[0] if hasattr(self.model, 'hidden') else list(self.model.parameters())[-2]
-        
+
+        raw_losses = [
+            data_loss,
+            lambda_heat * heat_loss,
+            lambda_stress * stress_loss,
+            lambda_porosity * porosity_loss + lambda_geometry * geometry_loss,
+        ]
+
         try:
-             # Stack losses for the balancer
-            raw_losses = [data_loss, heat_loss, stress_loss]
             weights = self.loss_balancer.update_weights(raw_losses, shared_params)
-            
-            # Weighted total loss
-            # weights[0] -> Data, weights[1] -> Heat, weights[2] -> Stress
-            total_loss = (weights[0] * data_loss + 
-                          weights[1] * heat_loss + 
-                          weights[2] * stress_loss)
-            
-            # Log current weights for plotting (detach to avoid graph retention)
-            # Store single value for the batch (approximated)
+            total_loss = sum(w * l for w, l in zip(weights, raw_losses))
             current_weights = weights.detach().cpu().numpy()
-            self.metrics['loss_weights']['data'].append(current_weights[0])
-            self.metrics['loss_weights']['heat'].append(current_weights[1])
-            self.metrics['loss_weights']['stress'].append(current_weights[2])
-                          
-        except Exception as e:
-            # Fallback if balancer fails (e.g. graph issues)
-            # print(f"Warning: Loss balancer failed ({e}), using static weights") # Reduce spam
-            total_loss = data_loss + \
-                         self.config['training']['lambda_heat'] * heat_loss + \
-                         self.config['training']['lambda_stress'] * stress_loss
-                         
-            # Log static weights
-            self.metrics['loss_weights']['data'].append(1.0)
-            self.metrics['loss_weights']['heat'].append(self.config['training']['lambda_heat'])
-            self.metrics['loss_weights']['stress'].append(self.config['training']['lambda_stress'])
-        
-        # Backward pass
-        total_loss.backward()
-        
-        # Clip gradients
-        if self.config['training'].get('clip_grad', False):
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), 
-                self.config['training'].get('clip_value', 1.0)
+            self.metrics['loss_weights']['data'].append(float(current_weights[0]))
+            self.metrics['loss_weights']['heat'].append(float(current_weights[1]))
+            self.metrics['loss_weights']['stress'].append(float(current_weights[2]))
+            self.metrics['loss_weights']['mechanical'].append(float(current_weights[3]))
+        except RuntimeError as e:
+            # Fallback to static weighting if GradNorm graph fails
+            total_loss = (
+                data_loss
+                + lambda_heat * heat_loss
+                + lambda_stress * stress_loss
+                + lambda_porosity * porosity_loss
+                + lambda_geometry * geometry_loss
             )
-        
-        # Optimizer step
+            self.metrics['loss_weights']['data'].append(1.0)
+            self.metrics['loss_weights']['heat'].append(lambda_heat)
+            self.metrics['loss_weights']['stress'].append(lambda_stress)
+            self.metrics['loss_weights']['mechanical'].append((lambda_porosity + lambda_geometry) / 2.0)
+
+        total_loss.backward()
+
+        if train_cfg.get('clip_grad', False):
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(),
+                train_cfg.get('clip_value', 1.0)
+            )
+
         self.optimizer.step()
-        
+
         return {
             'total': total_loss.item(),
             'data': data_loss.item(),
-            'physics': (heat_loss + stress_loss).item(),
+            'physics': (
+                lambda_heat * heat_loss
+                + lambda_stress * stress_loss
+                + lambda_porosity * porosity_loss
+                + lambda_geometry * geometry_loss
+            ).item(),
             'heat': heat_loss.item(),
-            'stress': stress_loss.item()
+            'stress': stress_loss.item(),
+            'porosity': porosity_loss.item(),
+            'geometry': geometry_loss.item(),
         }
     
     def train_epoch(self, epoch):
@@ -377,20 +382,8 @@ class PINNTrainer:
                 y_batch = y_batch.to(self.device)
                 
                 # Forward pass
-                # Ensure input dimensions match model's expected dimensions
-                combined_input = torch.cat([S_batch, coords_batch, t_batch], dim=1)
                 input_dim = self.config['model']['input_dim']
-                
-                # If dimensions exceed expected input_dim, trim the excess dimensions from S_batch
-                if combined_input.shape[1] > input_dim:
-                    # Calculate how many dimensions to keep from S_batch
-                    # We need to keep coords_batch (3) and t_batch (1) intact
-                    s_dims_to_keep = input_dim - coords_batch.shape[1] - t_batch.shape[1]
-                    # Create a properly sized input tensor
-                    model_input = torch.cat([S_batch[:, :s_dims_to_keep], coords_batch, t_batch], dim=1)
-                else:
-                    model_input = combined_input
-                    
+                model_input = self._build_model_input(S_batch, coords_batch, t_batch, input_dim)
                 y_pred = self.model(model_input)
                 
                 # Compute loss
@@ -460,7 +453,10 @@ class PINNTrainer:
     
     def plot_metrics(self):
         """Plot training and validation metrics with publication-quality formatting"""
-        plt.style.use('seaborn-v0_8-whitegrid') # Use a clean, scientific style if available, else defaults
+        try:
+            plt.style.use('seaborn-v0_8-whitegrid')
+        except OSError:
+            pass
         
         # Plot loss curves
         plt.figure(figsize=(10, 6), dpi=300)
