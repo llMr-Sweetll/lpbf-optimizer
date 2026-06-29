@@ -7,6 +7,9 @@
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg?style=for-the-badge&logo=pytorch&logoColor=white)
 ![Status](https://img.shields.io/badge/Status-Research%20Prototype-orange.svg?style=for-the-badge)
 ![Physics](https://img.shields.io/badge/Physics-Informed-purple.svg?style=for-the-badge)
+[![CI](https://github.com/llMr-Sweetll/lpbf-optimizer/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/llMr-Sweetll/lpbf-optimizer/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/llMr-Sweetll/lpbf-optimizer?style=for-the-badge)](https://github.com/llMr-Sweetll/lpbf-optimizer/releases/latest)
+[![Docker](https://img.shields.io/badge/Docker-GHCR-blue?style=for-the-badge&logo=docker&logoColor=white)](https://github.com/llMr-Sweetll/lpbf-optimizer/pkgs/container/lpbf-optimizer)
 
 > **A Framework for Multi-Objective Optimisation in Laser Powder Bed Fusion (LPBF)**
 
@@ -22,6 +25,7 @@
 - [References](#references)
 - [Getting Started](#getting-started)
 - [Documentation](#documentation)
+- [Roadmap & Contributing](#roadmap--contributing)
 - [Citation](#citation)
 - [License](#license)
 - [Author](#llmr-sweetll)
@@ -274,6 +278,25 @@ python src/vis/animate_training_metrics.py
 - [`docs/adr/`](docs/adr/) — Architecture Decision Records.
 - [`docs/scientific_workflow.md`](docs/scientific_workflow.md) — end-to-end scientific workflow.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — contributor guidelines.
+
+---
+
+## 🗺️ Roadmap & Contributing
+
+LPBF-Optimizer is actively maintained. The high-level roadmap lives in [`todo.md`](todo.md) and is tracked through GitHub Issues:
+
+- [Open issues](https://github.com/llMr-Sweetll/lpbf-optimizer/issues)
+- [Latest release](https://github.com/llMr-Sweetll/lpbf-optimizer/releases/latest)
+- [Container images](https://github.com/llMr-Sweetll/lpbf-optimizer/pkgs/container/lpbf-optimizer)
+
+Recent milestones in **v0.2.0**:
+
+- Leakage-free scan-vector data splits
+- Input normalisation, physical output bounds, and physics ablation studies
+- Expanded literature survey with a 40-reference BibTeX file
+- Automated CI/CD release pipeline and Docker image publication
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, coding style, and how to open pull requests.
 
 ---
 

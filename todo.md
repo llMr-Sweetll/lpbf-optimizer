@@ -2,12 +2,33 @@
 
 This roadmap links high-level phases to GitHub issues. Issue numbers are current as of 2026-06-30.
 
-## Phase 1: Robustness & Scientific Rigor (target v0.2.0)
+## Status Overview
 
-- [ ] [#2](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/2) Fix synthetic data train/val/test leakage
-- [ ] [#11](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/11) Add input normalisation to training pipeline
-- [ ] [#4](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/4) Enforce physical bounds on PINN outputs
-- [ ] [#13](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/13) Implement physics ablation study script
+- **Latest release:** [v0.2.0](https://github.com/llMr-Sweetll/lpbf-optimizer/releases/tag/v0.2.0)
+- **Health checks:** `pytest` 17/17 passed, `ruff` clean, `python -m build` succeeds
+- **Open issues:** tracked at https://github.com/llMr-Sweetll/lpbf-optimizer/issues
+
+## Recently Completed in v0.2.0
+
+- [x] [#2](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/2) Fix synthetic data train/val/test leakage
+- [x] [#4](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/4) Enforce physical bounds on PINN outputs
+- [x] [#6](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/6) Expand literature survey: LPBF PINNs 2024–2025
+- [x] [#7](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/7) Expand literature survey: uncertainty quantification beyond MC Dropout
+- [x] [#8](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/8) Expand literature survey: multi-objective Bayesian optimisation
+- [x] [#9](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/9) Expand literature survey: in-situ sensors and digital twins for LPBF
+- [x] [#10](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/10) Expand literature survey: reduced-order CFD and grain-structure models
+- [x] [#11](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/11) Add input normalisation to training pipeline
+- [x] [#13](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/13) Implement physics ablation study script
+- [x] [#20](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/20) Prepare v0.2.0 release notes and git tag
+- [x] [#21](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/21) Publish Docker image for reproducible environment
+- [x] [#23](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/23) Set up automated release workflow
+
+## Phase 1: Robustness & Scientific Rigor (target v0.2.x patch releases)
+
+- [x] [#2](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/2) Fix synthetic data train/val/test leakage
+- [x] [#11](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/11) Add input normalisation to training pipeline
+- [x] [#4](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/4) Enforce physical bounds on PINN outputs
+- [x] [#13](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/13) Implement physics ablation study script
 - [ ] [#12](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/12) Add optional temperature/stress output head for rigorous PDE enforcement
 - [ ] [#5](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/5) Review `predict_with_uncertainty` for future architecture changes
 
@@ -31,18 +52,18 @@ This roadmap links high-level phases to GitHub issues. Issue numbers are current
 
 ## Phase 5: Research & Literature Expansion
 
-- [ ] [#6](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/6) Expand literature survey: LPBF PINNs 2024–2025
-- [ ] [#7](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/7) Expand literature survey: uncertainty quantification beyond MC Dropout
-- [ ] [#8](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/8) Expand literature survey: multi-objective Bayesian optimisation
-- [ ] [#9](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/9) Expand literature survey: in-situ sensors and digital twins for LPBF
-- [ ] [#10](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/10) Expand literature survey: reduced-order CFD and grain-structure models
+- [x] [#6](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/6) Expand literature survey: LPBF PINNs 2024–2025
+- [x] [#7](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/7) Expand literature survey: uncertainty quantification beyond MC Dropout
+- [x] [#8](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/8) Expand literature survey: multi-objective Bayesian optimisation
+- [x] [#9](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/9) Expand literature survey: in-situ sensors and digital twins for LPBF
+- [x] [#10](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/10) Expand literature survey: reduced-order CFD and grain-structure models
 
 ## Phase 6: Release & Distribution
 
-- [ ] [#20](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/20) Prepare v0.2.0 release notes and git tag
-- [ ] [#21](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/21) Publish Docker image for reproducible environment
+- [x] [#20](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/20) Prepare v0.2.0 release notes and git tag
+- [x] [#21](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/21) Publish Docker image for reproducible environment
 - [ ] [#22](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/22) Publish `lpbf-optimizer` to PyPI
-- [ ] [#23](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/23) Set up automated release workflow
+- [x] [#23](https://github.com/llMr-Sweetll/lpbf-optimizer/issues/23) Set up automated release workflow
 
 ## Phase 7: Documentation & Developer Experience
 
