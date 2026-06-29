@@ -8,17 +8,17 @@ class PINN(nn.Module):
     (residual stress, porosity, geometric accuracy) from process parameters.
     
     Args:
-        in_dim (int): Input dimension (number of process parameters)
+        in_dim (int): Total input dimension (process parameters + spatial coordinates + time)
         out_dim (int): Output dimension (number of predicted outcomes)
         width (int): Width of hidden layers
         depth (int): Number of hidden layers
     """
-    def __init__(self, in_dim=9, out_dim=3, width=512, depth=5, dropout_rate=0.1):
+    def __init__(self, in_dim=10, out_dim=3, width=512, depth=5, dropout_rate=0.1):
         """
         Initialize the PINN model.
         
         Args:
-            in_dim (int): Input dimension (number of process parameters)
+            in_dim (int): Total input dimension (process parameters + spatial coordinates + time)
             out_dim (int): Output dimension (number of predicted outcomes)
             width (int): Width of hidden layers
             depth (int): Number of hidden layers
