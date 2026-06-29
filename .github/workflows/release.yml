@@ -37,6 +37,8 @@ jobs:
   build-and-publish:
     needs: test-and-lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
