@@ -153,11 +153,77 @@ class AblationStudy:
         trainer.train()
         metrics = trainer.evaluate()
 
-        return {
+        result = {
             "variant": name,
             "run_dir": str(trainer.run_dir),
             **metrics,
         }
+
+        # Always persist a per-variant CSV so partial runs can be aggregated.
+        self._save_single_result(result)
+        self._print_single_result(result)
+        return result
+
+    def _save_single_result(self, result):
+        """Write one variant's result to a dedicated CSV file."""
+        csv_path = self.output_dir / f"ablation_results_{result['variant']}.csv"
+        fieldnames = [
+            "variant",
+            "test_mse_total",
+            "test_mse_stress",
+            "test_mse_porosity",
+            "test_mse_accuracy",
+            "test_rmse_stress",
+            "test_rmse_porosity",
+            "test_rmse_accuracy",
+            "test_r2_stress",
+            "test_r2_porosity",
+            "test_r2_accuracy",
+            "physics_residual_total",
+            "physics_residual_heat",
+            "physics_residual_stress",
+            "physics_residual_porosity",
+            "physics_residual_geometry",
+            "bound_violations_pct",
+        ]
+        row = {
+            "variant": result["variant"],
+            "test_mse_total": result["test_mse_total"],
+            "test_mse_stress": result["test_mse_per_output"][0],
+            "test_mse_porosity": result["test_mse_per_output"][1],
+            "test_mse_accuracy": result["test_mse_per_output"][2],
+            "test_rmse_stress": result["test_rmse_per_output"][0],
+            "test_rmse_porosity": result["test_rmse_per_output"][1],
+            "test_rmse_accuracy": result["test_rmse_per_output"][2],
+            "test_r2_stress": result["test_r2_per_output"][0],
+            "test_r2_porosity": result["test_r2_per_output"][1],
+            "test_r2_accuracy": result["test_r2_per_output"][2],
+            "physics_residual_total": result["test_physics_residual"],
+            "physics_residual_heat": result["test_physics_components"]["heat"],
+            "physics_residual_stress": result["test_physics_components"]["stress"],
+            "physics_residual_porosity": result["test_physics_components"]["porosity"],
+            "physics_residual_geometry": result["test_physics_components"]["geometry"],
+            "bound_violations_pct": result["test_bound_violations_pct"],
+        }
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow(row)
+
+    @staticmethod
+    def _print_single_result(result):
+        """Print a compact summary for one variant."""
+        print(f"\n--- {result['variant']} results ---")
+        print(f"  Test MSE total       : {result['test_mse_total']:.6f}")
+        print(f"  Test MSE per output  : stress={result['test_mse_per_output'][0]:.4f}, "
+              f"porosity={result['test_mse_per_output'][1]:.6f}, "
+              f"accuracy={result['test_mse_per_output'][2]:.6f}")
+        print(f"  Test R2 per output   : stress={result['test_r2_per_output'][0]:.4f}, "
+              f"porosity={result['test_r2_per_output'][1]:.4f}, "
+              f"accuracy={result['test_r2_per_output'][2]:.4f}")
+        print(f"  Physics residual     : {result['test_physics_residual']:.6f}")
+        print(f"  Bound violations (%) : {result['test_bound_violations_pct']:.4f}")
+        print("-" * 40 + "\n")
 
     def run(self):
         """Run the full ablation study and persist the results."""
