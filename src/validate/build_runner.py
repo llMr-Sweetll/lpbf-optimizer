@@ -453,7 +453,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Run LPBF builds with optimized parameters')
-    parser.add_argument('--config', type=str, default='../../data/params.yaml',
+    parser.add_argument('--config', type=str, default='data/params.yaml',
                         help='Path to configuration file')
     parser.add_argument('--params', type=str, required=True,
                         help='Path to optimized parameters file')

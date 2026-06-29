@@ -820,7 +820,7 @@ class LPBFCharacterisation:
 def main():
     """Main function to run characterization"""
     parser = argparse.ArgumentParser(description='Characterize LPBF-built samples')
-    parser.add_argument('--config', type=str, default='../../data/params.yaml',
+    parser.add_argument('--config', type=str, default='data/params.yaml',
                         help='Path to configuration file')
     parser.add_argument('--xct', type=str, default=None,
                         help='Path to XCT data file')

@@ -372,7 +372,7 @@ class SyntheticDataGenerator:
 def main():
     """Main function to generate synthetic data"""
     parser = argparse.ArgumentParser(description='Generate synthetic FEA data for LPBF optimization')
-    parser.add_argument('--config', type=str, default='../data/params.yaml',
+    parser.add_argument('--config', type=str, default='data/params.yaml',
                         help='Path to configuration file')
     parser.add_argument('--scan-vectors', type=int, default=100,
                         help='Number of scan vector combinations to generate')

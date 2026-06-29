@@ -410,7 +410,7 @@ class LPBFDataPreprocessor:
 def main():
     """Main function to run data preprocessing"""
     parser = argparse.ArgumentParser(description='Preprocess LPBF FEA data for PINN training')
-    parser.add_argument('--config', type=str, default='../data/params.yaml',
+    parser.add_argument('--config', type=str, default='data/params.yaml',
                         help='Path to configuration file')
     parser.add_argument('--torch', action='store_true',
                         help='Also create PyTorch tensor datasets')
