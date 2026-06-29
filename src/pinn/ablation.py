@@ -14,6 +14,7 @@ import yaml
 # The standalone PINN modules live in src/pinn and are typically run as scripts.
 repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(repo_root / "src" / "pinn"))
+sys.path.insert(0, str(repo_root / "src"))
 
 from generate_synthetic_data import SyntheticDataGenerator  # noqa: E402
 from train import PINNTrainer  # noqa: E402
@@ -59,6 +60,7 @@ class AblationStudy:
         num_threads=4,
         seed=None,
         epochs=None,
+        variant=None,
         regenerate=False,
         scan_vectors=50,
         points_per_vector=64,
@@ -72,6 +74,7 @@ class AblationStudy:
             num_threads (int): Number of threads for each trainer.
             seed (int, optional): Random seed. Defaults to config value.
             epochs (int, optional): If given, override ``training.n_epochs``.
+            variant (str, optional): If given, run only this variant.
             regenerate (bool): If True, regenerate the synthetic dataset.
             scan_vectors (int): Number of scan vectors for synthetic data generation.
             points_per_vector (int): Spatial points per scan vector.
@@ -85,6 +88,9 @@ class AblationStudy:
         self.num_threads = num_threads
         self.seed = seed if seed is not None else self.base_config["training"].get("random_seed", 42)
         self.epochs = epochs
+        self.variant = variant
+        if self.variant is not None and self.variant not in VARIANTS:
+            raise ValueError(f"Unknown variant {self.variant!r}; choose from {list(VARIANTS)}")
         self.regenerate = regenerate
         self.scan_vectors = scan_vectors
         self.points_per_vector = points_per_vector
@@ -158,13 +164,16 @@ class AblationStudy:
         self.prepare_data()
         configs = self.build_variant_configs()
 
+        names = [self.variant] if self.variant else list(VARIANTS)
         self.results = []
-        for name in VARIANTS:
+        for name in names:
             result = self.run_variant(name, configs[name])
             self.results.append(result)
 
-        self.save_table()
-        self.print_table()
+        # Only write the aggregate table when all three variants have been run.
+        if self.variant is None:
+            self.save_table()
+            self.print_table()
         return self.results
 
     @staticmethod
@@ -314,6 +323,13 @@ def main():
         help="Override the number of training epochs for the ablation.",
     )
     parser.add_argument(
+        "--variant",
+        type=str,
+        default=None,
+        choices=list(VARIANTS.keys()),
+        help="Run a single ablation variant instead of the full study.",
+    )
+    parser.add_argument(
         "--regenerate",
         action="store_true",
         help="Regenerate the synthetic dataset before training.",
@@ -338,6 +354,7 @@ def main():
         num_threads=args.num_threads,
         seed=args.seed,
         epochs=args.epochs,
+        variant=args.variant,
         regenerate=args.regenerate,
         scan_vectors=args.scan_vectors,
         points_per_vector=args.points_per_vector,

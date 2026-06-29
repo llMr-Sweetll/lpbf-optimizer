@@ -53,8 +53,13 @@ class PINNTrainer:
         self.num_threads = num_threads
         os.environ['OMP_NUM_THREADS'] = str(self.num_threads)
         os.environ['MKL_NUM_THREADS'] = str(self.num_threads)
-        torch.set_num_threads(self.num_threads)
-        torch.set_num_interop_threads(self.num_threads)
+        try:
+            torch.set_num_threads(self.num_threads)
+            torch.set_num_interop_threads(self.num_threads)
+        except RuntimeError:
+            # These calls are not allowed after PyTorch's thread pool has already
+            # been used (e.g. when multiple trainers run in the same process).
+            pass
 
         # Set device
         device_cfg = self.config['training'].get('device', 'auto')
