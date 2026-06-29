@@ -1,4 +1,5 @@
 import os
+import platform
 
 import torch
 import torch.nn as nn
@@ -191,7 +192,6 @@ class PINNTrainer:
             y_val = torch.tensor(f['val/outputs'][:], dtype=torch.float32)
         
         # Move data to device
-        import platform
         num_workers = self.config['training'].get('num_workers', None)
         if num_workers is None:
             num_workers = 0 if platform.system() == 'Darwin' else self.num_threads
@@ -247,16 +247,23 @@ class PINNTrainer:
         # Shared parameter for GradNorm (last hidden layer weight matrix)
         shared_params = list(self.model.hidden[-1].parameters())[0] if hasattr(self.model, 'hidden') else list(self.model.parameters())[-2]
 
+        # Pass unscaled losses to the balancer so adaptive weights control the
+        # relative contribution of each term without double-scaling by lambdas.
         raw_losses = [
             data_loss,
-            lambda_heat * heat_loss,
-            lambda_stress * stress_loss,
-            lambda_porosity * porosity_loss + lambda_geometry * geometry_loss,
+            heat_loss,
+            stress_loss,
+            porosity_loss + geometry_loss,
         ]
 
         try:
             weights = self.loss_balancer.update_weights(raw_losses, shared_params)
-            total_loss = sum(w * l for w, l in zip(weights, raw_losses))
+            total_loss = (
+                weights[0] * data_loss
+                + weights[1] * lambda_heat * heat_loss
+                + weights[2] * lambda_stress * stress_loss
+                + weights[3] * (lambda_porosity * porosity_loss + lambda_geometry * geometry_loss)
+            )
             current_weights = weights.detach().cpu().numpy()
             self.metrics['loss_weights']['data'].append(float(current_weights[0]))
             self.metrics['loss_weights']['heat'].append(float(current_weights[1]))
@@ -493,6 +500,7 @@ class PINNTrainer:
             plt.plot(steps, self.metrics['loss_weights']['data'], label=r'$\lambda_{data}$', alpha=0.8)
             plt.plot(steps, self.metrics['loss_weights']['heat'], label=r'$\lambda_{heat}$', alpha=0.8)
             plt.plot(steps, self.metrics['loss_weights']['stress'], label=r'$\lambda_{stress}$', alpha=0.8)
+            plt.plot(steps, self.metrics['loss_weights']['mechanical'], label=r'$\lambda_{mechanical}$', alpha=0.8)
             plt.xlabel('Training Step', fontsize=12, fontweight='bold')
             plt.ylabel('Adaptive Weight Value', fontsize=12, fontweight='bold')
             plt.title('Evolution of Adaptive Loss Weights (GradNorm)', fontsize=14, fontweight='bold')
