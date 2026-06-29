@@ -44,7 +44,7 @@ flowchart LR
     B5 --> C[Output Layer]
     
     subgraph "Layer Details"
-    A1["Input (9 neurons)\nProcess params + coords + time"] --> A
+    A1["Input (10 neurons)\n6 process params + 3 coords + 1 time"] --> A
     B["Hidden (512 neurons each)\nSiLU Activation"] --> B1 & B2 & B3 & B4 & B5
     C1["Output (3 neurons)\nResidual stress, porosity, geometric accuracy"] --> C
     end
@@ -136,7 +136,7 @@ flowchart LR
     end
     
     subgraph "Training Parameters"
-    C1[Epochs: 500]
+    C1[Epochs: 50 (default in data/params.yaml; reduce to 2 for CI smoke tests)]
     C2[Batch Size: 64]
     C3[Gradient Clipping: 1.0]
     end

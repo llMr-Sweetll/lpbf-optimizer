@@ -1,58 +1,30 @@
-# LPBF Optimizer Development Roadmap
+# LPBF-Optimizer Roadmap
 
-## Phase 1: Robustness & Validation (Current)
+## Phase 1: Robustness and Validation (In Progress)
 
-- [x] **Core Architecture**: Data Generation -> PINN Training -> NSGA-III Optimization (Verified)
-- [ ] **Experimental Validation Workflow**:
-  - [ ] Design DOE for physical coupon printing (varying P, v, hatch).
-  - [ ] Correlate predicted porosity/stress with XRD/CT-scan data.
-  - [ ] Calibrate PINN physics parameters ($\eta$, $\lambda_{heat}$) against experimental ground truth.
-- [ ] **Uncertainty Quantification (UQ)**:
-  - [ ] Implement Bayesian PINN (BNN) layers to output aleatoric uncertainty ($\sigma$).
-  - [ ] Quantify epistemic uncertainty via Deep Ensembles for high-stakes aerospace confidence intervals.
+- [x] Fix physics loss to align with quality-metric outputs.
+- [x] Fix NSGA-III objective direction.
+- [x] Add tests and CI.
+- [x] Refresh documentation and repository standards.
+- [ ] Experimental validation campaign with XCT/EBSD/stress data.
+- [ ] Calibrate synthetic data against real FEA/experiments.
 
-## Phase 2: Multi-Scale Physics Integration
+## Phase 2: Melt Pool CFD and Grain Structure
 
-- [ ] **Melt Pool Dynamics (Mesoscale)**:
-  - [ ] Integrate Computational Fluid Dynamics (CFD) loss terms (Navier-Stokes) to model Marangoni convection.
-  - [ ] Simulate keyhole mode vs. conduction mode transition boundaries.
-- [ ] **Grain Structure Evolution (Microscale)**:
-  - [ ] Couple PINN thermal history with Cellular Automata (CA) or Phase Field models.
-  - [ ] Predict grain size distribution, orientation (texture), and columnar-to-equiaxed transition (CET).
-  - [ ] **Surrogate Modeling**: Train Graph Neural Networks (GNNs) on Phase Field simulation data to predict grain structure in real-time.
+- Integrate reduced-order CFD surrogate.
+- Add grain-structure proxy models.
 
-## Phase 3: Digital Twin & In-Situ Control
+## Phase 3: Real-Time Data Assimilation and Control
 
-- [ ] **Real-Time Data Assimilation**:
-  - [ ] Integrate sensor streams (pyrometer, high-speed camera, photodiode).
-  - [ ] Develop Kalman Filter or 4D-Var data assimilation to update PINN state variables on-the-fly.
-- [ ] **Closed-Loop "Self-Healing" Control**:
-  - [ ] Implement Model Predictive Control (MPC) using the PINN digital twin.
-  - [ ] Dynamically adjust laser power/speed to maintain constant melt pool depth despite complex geometry thermal buildup.
-  - [ ] Detect and correct lack-of-fusion defects layer-by-layer.
+- In-situ sensor integration stubs.
+- Closed-loop parameter adaptation.
 
-## Phase 4: Advanced Material & Geometry Intelligence
+## Phase 4: Scan Path and Functionally Graded Materials
 
-- [ ] **Scan Path Optimization**:
-  - [ ] Move beyond simple raster vectors (Skywriting, Fractal patterns).
-  - [ ] Optimize local dwell times for geometric feature fidelity (overhangs, thin walls).
-- [ ] **Functionally Graded Materials (FGMs)**:
-  - [ ] Optimize parameters for transitioning alloy compositions (e.g., SS316L to Inconel 718).
-  - [ ] Model mixing kinetics and intermetallic phase formation risks.
+- Island/scan-strategy optimisation.
+- Graded parameter fields.
 
-## Phase 5: 3D Simulation & Microstructure Evolution (Future)
+## Phase 5: Full 3D Simulation and Microstructure Evolution
 
-**Objective**: Transition from 2D cross-sections to full 3D melt pool dynamics and grain structure prediction.
-**Key References**:
-
-- *Zhao, Mirihanage, et al. (2025)*: Revealing melt flow instabilities in LPBF via in-situ X-ray imaging.
-- *PINNs for Additive Manufacturing Review (2025)*: Thermal management and multi-track prediction.
-
-- [ ] **3D PINN Architecture**
-  - [ ] Extend input dim to explicitly include `z`-axis for volumetric prediction.
-  - [ ] Implement 3D Convolutional/Attention mechanisms for spatial correlations.
-- [ ] **Microstructure Modeling**
-  - [ ] Integrate Phase Field methods with PINNs for grain growth (Grand-Potential functional).
-  - [ ] Predict grain orientation and size distribution (EBSD correlation).
-- [ ] **Visualisation**
-  - [ ] Interactive 3D melt pool visualization (VTK/Paraview export).
+- High-fidelity 3D thermal-mechanical surrogate.
+- Microstructure evolution coupling.

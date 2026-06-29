@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lpbf-optimizer"
+version = "0.1.0"
+description = "Physics-Informed Neural Network + Multi-Objective Optimisation for LPBF"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Chandrashekhar Hegde", email = "hegde.g.chandrashekhar@gmail.com"},
+]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "pandas>=2.0.0",
+    "torch>=2.0.0",
+    "torchdiffeq>=0.2.3",
+    "pymoo>=0.6.0",
+    "botorch>=0.8.0",
+    "ax-platform>=0.3.0",
+    "h5py>=3.9.0",
+    "pyyaml>=6.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "tensorboard>=2.12.0",
+    "scikit-image>=0.20.0",
+    "numpy-stl>=3.0.0",
+    "scikit-learn>=1.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.3.1",
+    "ruff>=0.1.0",
+    "pre-commit>=3.4.0",
+]
+notebooks = [
+    "jupyter>=1.0.0",
+    "ipywidgets>=8.0.0",
+    "torchvision>=0.15.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/llMr-Sweetll/lpbf-optimizer"
+Repository = "https://github.com/llMr-Sweetll/lpbf-optimizer"
+
+[tool.setuptools]
+packages = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "src/pinn", "src/optimiser", "src/validate", "src/vis"]
+addopts = "-v"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
