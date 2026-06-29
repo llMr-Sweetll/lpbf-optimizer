@@ -231,59 +231,50 @@ class SyntheticDataGenerator:
 
         return outputs
 
-    def split_data(self, inputs, outputs, coords, times):
+    def split_data(self, scan_ids, n_scan_vectors):
         """
-        Split data into training, validation, and test sets
+        Split scan-vector IDs into training, validation, and test sets.
+
+        The split is performed at the scan-vector level so that all spatial
+        points belonging to the same vector stay in the same split, preventing
+        data leakage.
 
         Args:
-            inputs: Input data
-            outputs: Output data
-            coords: Spatial coordinates
-            times: Time points
+            scan_ids (np.ndarray): Per-point scan vector IDs.
+            n_scan_vectors (int): Total number of scan vectors.
 
         Returns:
-            Tuple of (train, val, test) data dictionaries
+            Tuple of (train_indices, val_indices, test_indices) scan-vector IDs.
         """
         # Get split ratios from config
         train_split = self.config['data'].get('train_split', 0.8)
         val_split = self.config['data'].get('val_split', 0.1)
 
-        # Create indices and shuffle
-        n_samples = len(inputs)
-        indices = np.random.permutation(n_samples)
+        # Create scan-vector indices and shuffle
+        indices = np.random.permutation(n_scan_vectors)
 
         # Calculate split points
-        n_train = int(train_split * n_samples)
-        n_val = int(val_split * n_samples)
+        n_train = int(train_split * n_scan_vectors)
+        n_val = int(val_split * n_scan_vectors)
+        n_test = n_scan_vectors - n_train - n_val
 
-        # Split indices
+        # Ensure every split receives at least one scan vector when possible
+        if n_val == 0 and n_train > 1:
+            n_train -= 1
+            n_val += 1
+        if n_test == 0:
+            if n_val > 1:
+                n_val -= 1
+                n_test += 1
+            elif n_train > 1:
+                n_train -= 1
+                n_test += 1
+
         train_indices = indices[:n_train]
-        val_indices = indices[n_train:n_train+n_val]
-        test_indices = indices[n_train+n_val:]
+        val_indices = indices[n_train:n_train + n_val]
+        test_indices = indices[n_train + n_val:]
 
-        # Split data
-        train_data = {
-            'inputs': inputs[train_indices],
-            'outputs': outputs[train_indices],
-            'coordinates': coords[train_indices],
-            'time': times[train_indices]
-        }
-
-        val_data = {
-            'inputs': inputs[val_indices],
-            'outputs': outputs[val_indices],
-            'coordinates': coords[val_indices],
-            'time': times[val_indices]
-        }
-
-        test_data = {
-            'inputs': inputs[test_indices],
-            'outputs': outputs[test_indices],
-            'coordinates': coords[test_indices],
-            'time': times[test_indices]
-        }
-
-        return train_data, val_data, test_data
+        return train_indices, val_indices, test_indices
 
     def generate(self, n_scan_vectors=100, n_points_per_vector=1000):
         """
@@ -310,11 +301,6 @@ class SyntheticDataGenerator:
         actual_points_per_vector = len(coords) // n_scan_vectors
 
         # Generate outputs based on physics-informed relations
-        # We need to reshape scan_vectors to match the actual coordinates structure for calculation
-        # The generate_fea_outputs function handles the repetition internally based on lengths
-        # But we need to make sure we pass the right things to it if it expects matching lengths
-        # Checking generate_fea_outputs: it repeats P, v, h, theta based on len(coords) // len(scan_vectors)
-        # So it should be fine as long as len(coords) is divisible by len(scan_vectors), which it is.
         outputs = self.generate_fea_outputs(scan_vectors, coords, times)
         logger.info(f"Generated outputs with shape {outputs.shape}")
 
@@ -323,9 +309,47 @@ class SyntheticDataGenerator:
         scan_vectors_expanded = np.repeat(scan_vectors, actual_points_per_vector, axis=0)
         inputs = np.hstack([scan_vectors_expanded, coords, times])
 
-        # Split data into train/val/test
-        train_data, val_data, test_data = self.split_data(inputs, outputs, coords, times)
-        logger.info(f"Split data into {len(train_data['inputs'])} training, {len(val_data['inputs'])} validation, and {len(test_data['inputs'])} test samples")
+        # Per-point scan-vector IDs for leakage-free splitting
+        scan_ids = np.repeat(np.arange(n_scan_vectors), actual_points_per_vector)
+
+        # Compute standard-scaler parameters from the full generated arrays
+        scan_mean = scan_vectors.mean(axis=0)
+        scan_std = scan_vectors.std(axis=0)
+        coords_mean = coords.mean(axis=0)
+        coords_std = coords.std(axis=0)
+
+        # Split data by scan vector to prevent leakage
+        train_vec_ids, val_vec_ids, test_vec_ids = self.split_data(scan_ids, n_scan_vectors)
+
+        train_mask = np.isin(scan_ids, train_vec_ids)
+        val_mask = np.isin(scan_ids, val_vec_ids)
+        test_mask = np.isin(scan_ids, test_vec_ids)
+
+        train_data = {
+            'inputs': inputs[train_mask],
+            'outputs': outputs[train_mask],
+            'coordinates': coords[train_mask],
+            'time': times[train_mask],
+            'scan_vectors': scan_vectors_expanded[train_mask]
+        }
+        val_data = {
+            'inputs': inputs[val_mask],
+            'outputs': outputs[val_mask],
+            'coordinates': coords[val_mask],
+            'time': times[val_mask],
+            'scan_vectors': scan_vectors_expanded[val_mask]
+        }
+        test_data = {
+            'inputs': inputs[test_mask],
+            'outputs': outputs[test_mask],
+            'coordinates': coords[test_mask],
+            'time': times[test_mask],
+            'scan_vectors': scan_vectors_expanded[test_mask]
+        }
+        logger.info(
+            f"Split data into {len(train_data['inputs'])} training, "
+            f"{len(val_data['inputs'])} validation, and {len(test_data['inputs'])} test samples"
+        )
 
         # Save to HDF5 file
         with h5py.File(self.output_path, 'w') as f:
@@ -335,26 +359,15 @@ class SyntheticDataGenerator:
             test_group = f.create_group('test')
             meta_group = f.create_group('metadata')
 
-            # Save training data
-            train_group.create_dataset('inputs', data=train_data['inputs'])
-            train_group.create_dataset('outputs', data=train_data['outputs'])
-            train_group.create_dataset('coordinates', data=train_data['coordinates'])
-            train_group.create_dataset('time', data=train_data['time'])
-            train_group.create_dataset('scan_vectors', data=train_data['inputs'][:, :len(param_names)])
-
-            # Save validation data
-            val_group.create_dataset('inputs', data=val_data['inputs'])
-            val_group.create_dataset('outputs', data=val_data['outputs'])
-            val_group.create_dataset('coordinates', data=val_data['coordinates'])
-            val_group.create_dataset('time', data=val_data['time'])
-            val_group.create_dataset('scan_vectors', data=val_data['inputs'][:, :len(param_names)])
-
-            # Save test data
-            test_group.create_dataset('inputs', data=test_data['inputs'])
-            test_group.create_dataset('outputs', data=test_data['outputs'])
-            test_group.create_dataset('coordinates', data=test_data['coordinates'])
-            test_group.create_dataset('time', data=test_data['time'])
-            test_group.create_dataset('scan_vectors', data=test_data['inputs'][:, :len(param_names)])
+            # Save split data
+            for group, data in [(train_group, train_data),
+                                (val_group, val_data),
+                                (test_group, test_data)]:
+                group.create_dataset('inputs', data=data['inputs'])
+                group.create_dataset('outputs', data=data['outputs'])
+                group.create_dataset('coordinates', data=data['coordinates'])
+                group.create_dataset('time', data=data['time'])
+                group.create_dataset('scan_vectors', data=data['scan_vectors'])
 
             # Save metadata
             meta_group.attrs['n_total'] = len(inputs)
@@ -362,6 +375,20 @@ class SyntheticDataGenerator:
             meta_group.attrs['n_val'] = len(val_data['inputs'])
             meta_group.attrs['n_test'] = len(test_data['inputs'])
             meta_group.attrs['created'] = datetime.now().isoformat()
+
+            # Save scan-vector IDs for each split
+            meta_group.create_dataset('train_scan_ids', data=train_vec_ids)
+            meta_group.create_dataset('val_scan_ids', data=val_vec_ids)
+            meta_group.create_dataset('test_scan_ids', data=test_vec_ids)
+
+            # Save standard-scaler parameters
+            scaler_group = meta_group.create_group('scaler_params')
+            sv_scaler = scaler_group.create_group('scan_vectors')
+            sv_scaler.create_dataset('mean', data=scan_mean)
+            sv_scaler.create_dataset('std', data=scan_std)
+            coord_scaler = scaler_group.create_group('coordinates')
+            coord_scaler.create_dataset('mean', data=coords_mean)
+            coord_scaler.create_dataset('std', data=coords_std)
 
             # Save parameter names
             dt = h5py.special_dtype(vlen=str)
