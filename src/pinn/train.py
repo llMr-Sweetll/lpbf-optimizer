@@ -155,8 +155,7 @@ class PINNTrainer:
                 self.optimizer,
                 mode='min',
                 factor=sched_config.get('factor', 0.1),
-                patience=sched_config.get('patience', 10),
-                verbose=True
+                patience=sched_config.get('patience', 10)
             )
         elif sched_config['type'].lower() == 'cosine':
             scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -491,9 +490,9 @@ class PINNTrainer:
         if self.metrics['loss_weights']['data']:
             plt.figure(figsize=(10, 6), dpi=300)
             steps = range(len(self.metrics['loss_weights']['data']))
-            plt.plot(steps, self.metrics['loss_weights']['data'], label='$\lambda_{data}$', alpha=0.8)
-            plt.plot(steps, self.metrics['loss_weights']['heat'], label='$\lambda_{heat}$', alpha=0.8)
-            plt.plot(steps, self.metrics['loss_weights']['stress'], label='$\lambda_{stress}$', alpha=0.8)
+            plt.plot(steps, self.metrics['loss_weights']['data'], label=r'$\lambda_{data}$', alpha=0.8)
+            plt.plot(steps, self.metrics['loss_weights']['heat'], label=r'$\lambda_{heat}$', alpha=0.8)
+            plt.plot(steps, self.metrics['loss_weights']['stress'], label=r'$\lambda_{stress}$', alpha=0.8)
             plt.xlabel('Training Step', fontsize=12, fontweight='bold')
             plt.ylabel('Adaptive Weight Value', fontsize=12, fontweight='bold')
             plt.title('Evolution of Adaptive Loss Weights (GradNorm)', fontsize=14, fontweight='bold')
