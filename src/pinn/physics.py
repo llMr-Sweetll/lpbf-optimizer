@@ -4,6 +4,10 @@ import torch
 def _analytic_temperature(S, coords, t, mat_props):
     """Rosenthal-like analytic temperature rise from a moving point source.
 
+    Coordinates and beam radius are in mm, while conductivity ``k`` is supplied
+    in W/m·K. We convert to W/mm·K for a dimensionally consistent temperature
+    rise: ``T = T0 + eta*P / (2*pi*k_eff*r) * exp(-2*r^2/r0^2)``.
+
     Args:
         S (torch.Tensor): Process parameters [N, n_params].
         coords (torch.Tensor): Spatial coordinates [N, 3], requires_grad=True.
@@ -16,18 +20,18 @@ def _analytic_temperature(S, coords, t, mat_props):
     P = S[:, 0:1]
     v = S[:, 1:2]
     eta = mat_props['eta']
-    k = mat_props['k']
-    r0 = mat_props['r0']
+    k = mat_props['k']          # W/m·K
+    r0 = mat_props['r0']        # mm
+
+    k_eff = k / 1000.0          # W/mm·K
 
     x_laser = v * t
     r_squared = (coords[:, 0:1] - x_laser) ** 2 + coords[:, 1:2] ** 2 + coords[:, 2:3] ** 2
+    r = torch.sqrt(r_squared + 1e-8)
 
-    # Gaussian heat source intensity
-    q = 2.0 * eta * P / (torch.pi * r0 ** 2) * torch.exp(-2.0 * r_squared / r0 ** 2)
-
-    # Steady-state moving point-source approximation
+    # Gaussian-damped moving point-source approximation
     T0 = 300.0
-    T = T0 + q / (2.0 * torch.pi * k * torch.sqrt(r_squared + 1e-6))
+    T = T0 + (eta * P) / (2.0 * torch.pi * k_eff * r) * torch.exp(-2.0 * r_squared / r0 ** 2)
     return T
 
 
@@ -78,20 +82,21 @@ def _heat_residual(T, S, coords, t, mat_props):
 def _stress_residual(sigma, T, coords, mat_props):
     """Thermo-elastic equilibrium residual for the predicted residual stress.
 
-    The predicted residual stress is treated as a scalar field. The residual
-    penalises the deviation of its Laplacian from the thermo-elastic source
-    induced by the temperature field.
+    The predicted residual stress is treated as a scalar field in MPa. The
+    residual penalises the deviation of its Laplacian from the thermo-elastic
+    source induced by the temperature field, with all terms expressed in MPa.
     """
-    E = mat_props['E'] * 1e9  # GPa -> Pa for consistent constitutive scale
-    alpha = mat_props['alpha']
-    nu = mat_props['nu']
+    E_GPa = mat_props['E']         # Young's modulus (GPa)
+    alpha = mat_props['alpha']     # Thermal expansion coefficient (1/K)
+    nu = mat_props['nu']           # Poisson's ratio
 
-    laplacian_sigma = _laplacian(sigma, coords)
+    laplacian_sigma_MPa = _laplacian(sigma, coords)
     laplacian_T = _laplacian(T, coords)
 
-    # Thermo-elastic source term (simplified)
-    source = (E * alpha / (1.0 - nu)) * laplacian_T
-    residual = laplacian_sigma - source
+    # E*alpha/(1-nu) has units of Pa/K. Dividing by 1e6 converts to MPa/K so
+    # the source term matches the MPa units of the predicted residual stress.
+    source_MPa = (E_GPa * 1e3 * alpha / (1.0 - nu)) * laplacian_T / 1e6
+    residual = laplacian_sigma_MPa - source_MPa
     return residual
 
 
@@ -100,10 +105,14 @@ def _porosity_residual(porosity, S):
     P = S[:, 0]
     v = S[:, 1]
     h = S[:, 2]
-    t = S[:, 5]  # layer thickness
-    energy_density = P / (v * h * t + 1e-8)
-    optimal_ed = 0.15
-    porosity_indicator = 0.05 + 0.2 * (energy_density - optimal_ed) ** 2
+    # Use the last parameter column as layer thickness rather than hardcoding
+    # an index, matching the parameter order defined in the config.
+    layer_thickness = S[:, -1]
+    ed = P / (v * h * layer_thickness + 1e-8)
+    # Normalize to a reference energy density of ~10 J/mm^3 for the current
+    # parameter bounds and keep the indicator bounded via a sigmoid.
+    ed_norm = ed / 10.0
+    porosity_indicator = 0.05 + 0.2 * torch.sigmoid((ed_norm - 1.5) * 2.0)
     residual = porosity.squeeze() - porosity_indicator
     return residual
 
@@ -114,7 +123,7 @@ def _geometry_residual(accuracy, T, coords):
         T.sum(), coords, create_graph=True, retain_graph=True
     )[0]
     grad_T_mag = torch.sqrt(torch.sum(grad_T ** 2, dim=1) + 1e-8)
-    accuracy_indicator = 1.0 - 0.1 * grad_T_mag
+    accuracy_indicator = 1.0 - 0.05 * torch.tanh(grad_T_mag / 1000.0)
     accuracy_indicator = torch.clamp(accuracy_indicator, 0.7, 1.0)
     residual = accuracy.squeeze() - accuracy_indicator
     return residual
