@@ -26,34 +26,38 @@ model:
 
 # Data configuration
 data:
-  raw_data_dir: "c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/raw"
-  processed_data_path: "c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/processed/lpbf_dataset.h5"
+  raw_data_dir: "data/raw"
+  processed_data_path: "data/processed/lpbf_dataset.h5"
   train_split: 0.8   # Fraction of data for training
   val_split: 0.1     # Fraction of data for validation
   test_split: 0.1    # Fraction of data for testing
-  
+
 # Training configuration
 training:
-  n_epochs: 2
+  n_epochs: 50
   batch_size: 64
+  random_seed: 42
+  device: "auto"     # "auto", "cpu", or "cuda"
+  normalize: false   # Enable input normalization (reserved for future work)
   balancer_alpha: 1.5 # Alpha for Adaptive Loss Balancing (Wang et al. 2021)
   optimizer:
     type: "adam"
     learning_rate: 0.001
     weight_decay: 1.0e-5
   scheduler:
-    type: "reducelronplateau"
+    type: "reduce_lr_on_plateau"
     factor: 0.5
     patience: 20
   lambda_heat: 0.1   # Weight for heat equation physics loss
   lambda_stress: 0.1 # Weight for stress equation physics loss
+  lambda_porosity: 0.05
+  lambda_geometry: 0.05
   clip_grad: true
   clip_value: 1.0
   checkpoint_freq: 10
-  output_dir: "c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/models"
+  output_dir: "data/models"
   plot_freq: 10
   print_freq: 5
-
 
 # FEA configuration
 fea:
@@ -61,15 +65,22 @@ fea:
   abaqus_path: "abaqus"
   comsol_path: "comsol"
   comsol_java_path: "/Applications/COMSOL55/Multiphysics/plugins/org.comsol.model.jarfile/model.jar"
-  template_path: "../data/templates/lpbf_template.inp"
-  output_dir: "../data/raw/fea_results"
+  template_path: "data/templates/lpbf_template.inp"
+  output_dir: "data/raw/fea_results"
   n_cpus: 4
-  
+  max_parallel: 4
+
+# Validation configuration (stubs)
+validate:
+  output_dir: "builds"
+  machine_ip: ""
+  dry_run: true
+
 # Optimizer configuration
 optimizer:
   algorithm: "nsga3"  # or "bayesopt"
-  output_dir: "c:/Users/Chandrashekhar Hegde/Code/lpbf-optimizer/data/optimized"
-  
+  output_dir: "data/optimized"
+
   # Parameter bounds for optimization
   param_bounds:
     P: [150, 400]     # Laser power (W)
@@ -78,18 +89,18 @@ optimizer:
     theta: [0, 90]    # Scan angle (degrees)
     l_island: [2, 10] # Island size (mm)
     layer_thickness: [0.02, 0.06]  # Layer thickness (mm)
-  
+
   # NSGA-III specific settings
   pop_size: 100
   n_gen: 100
   n_partitions: 12
-  
+
   # Objectives to optimize
   objectives:
     - "residual_stress"  # Minimize residual stress
     - "porosity"         # Minimize porosity
-    - "geometric_accuracy"  # Maximize geometric accuracy (minimize deviation)
-  
+    - "geometric_accuracy"  # Maximize geometric accuracy (handled by negation in optimizer)
+
   # Bayesian optimization specific settings
   n_trials: 50
   seed: 42
