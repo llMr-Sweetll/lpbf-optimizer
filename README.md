@@ -251,6 +251,33 @@ python src/vis/animate_training_metrics.py
 
 ---
 
+## 📖 Citation
+
+If you use **LPBF-Optimizer** in your research, publications, conference papers, or technical reports, please cite it as follows:
+
+### BibTeX
+
+```bibtex
+@software{hegde2026lpbfoptimizer,
+  author = {Hegde, Chandrashekhar},
+  title = {{LPBF-Optimizer}: Physics-Informed Digital Twin for Additive Manufacturing},
+  year = {2026},
+  url = {https://github.com/llMr-Sweetll/lpbf-optimizer},
+  version = {0.1.0},
+  note = {Research prototype}
+}
+```
+
+### APA
+
+Hegde, C. (2026). *LPBF-Optimizer: Physics-Informed Digital Twin for Additive Manufacturing* (Version 0.1.0) [Computer software]. https://github.com/llMr-Sweetll/lpbf-optimizer
+
+### IEEE
+
+C. Hegde, “LPBF-Optimizer: Physics-Informed Digital Twin for Additive Manufacturing,” 2026. [Online]. Available: https://github.com/llMr-Sweetll/lpbf-optimizer
+
+---
+
 ## 📄 License
 
 MIT — see [`LICENSE`](LICENSE).
