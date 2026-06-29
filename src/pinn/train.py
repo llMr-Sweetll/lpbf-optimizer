@@ -82,6 +82,9 @@ class PINNTrainer:
         # Set up directories
         self.setup_directories()
 
+        # Load input normalisation parameters from the processed dataset, if available.
+        self.scaler_params = self._load_scaler_params()
+
         # Initialize model
         self.model = self._build_model()
 
@@ -155,6 +158,34 @@ class PINNTrainer:
             return torch.cat([S_batch[:, :s_keep], coords_batch, t_batch], dim=1)
         return combined
 
+    def _load_scaler_params(self):
+        """Load standard-scaler parameters from the processed HDF5 file.
+
+        Returns:
+            dict or None: Scaler parameters in the format expected by ``PINN``,
+            or ``None`` if the file or scaler group is missing.
+        """
+        data_file = Path(self.config['data']['processed_data_path'])
+        try:
+            with h5py.File(data_file, 'r') as f:
+                if 'metadata' not in f or 'scaler_params' not in f['metadata']:
+                    return None
+                scaler = f['metadata/scaler_params']
+
+                def _read(group_name):
+                    group = scaler[group_name]
+                    return {
+                        'mean': group['mean'][:],
+                        'std': group['std'][:],
+                    }
+
+                return {
+                    'scan_vectors': _read('scan_vectors'),
+                    'coordinates': _read('coordinates'),
+                }
+        except (OSError, KeyError, FileNotFoundError):
+            return None
+
     def _build_model(self):
         """Initialize the PINN model."""
         model_config = self.config['model']
@@ -166,6 +197,7 @@ class PINNTrainer:
             dropout_rate=model_config.get('dropout_rate', 0.1),
             apply_output_bounds=model_config.get('apply_output_bounds', False),
             output_bounds_temperature=model_config.get('output_bounds_temperature', 100.0),
+            scaler_params=self.scaler_params,
         )
         model = model.to(self.device)
         return model

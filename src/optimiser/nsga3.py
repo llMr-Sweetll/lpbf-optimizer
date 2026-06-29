@@ -149,24 +149,50 @@ class NSGAOptimizer:
         sys.path.insert(0, str(repo_root / 'src' / 'pinn'))
         from model import PINN
 
-        # Create model with same architecture as during training
+        # Load the checkpoint first so that optional scaler parameters and bound
+        # settings can be reconstructed before the model is instantiated.
+        checkpoint = torch.load(model_path, map_location=self.device)
+        state = checkpoint['model_state_dict']
+
+        scaler_params = self._extract_scaler_params(state)
+
+        # Create model with same architecture and settings as during training
         model_config = self.config['model']
         model = PINN(
             in_dim=model_config['input_dim'],
             out_dim=model_config['output_dim'],
             width=model_config['hidden_width'],
-            depth=model_config['hidden_depth']
+            depth=model_config['hidden_depth'],
+            dropout_rate=model_config.get('dropout_rate', 0.1),
+            apply_output_bounds=model_config.get('apply_output_bounds', False),
+            output_bounds_temperature=model_config.get('output_bounds_temperature', 100.0),
+            scaler_params=scaler_params,
         )
 
-        # Load weights
-        checkpoint = torch.load(model_path, map_location=self.device)
-        model.load_state_dict(checkpoint['model_state_dict'])
+        model.load_state_dict(state)
 
         # Set to evaluation mode
         model.eval()
         model = model.to(self.device)
 
         return model
+
+    @staticmethod
+    def _extract_scaler_params(state):
+        """Build the scaler_params dict from a model state_dict, if present."""
+        required = ('scan_mean', 'scan_std', 'coord_mean', 'coord_std')
+        if not all(k in state for k in required):
+            return None
+        return {
+            'scan_vectors': {
+                'mean': state['scan_mean'].cpu().numpy(),
+                'std': state['scan_std'].cpu().numpy(),
+            },
+            'coordinates': {
+                'mean': state['coord_mean'].cpu().numpy(),
+                'std': state['coord_std'].cpu().numpy(),
+            },
+        }
 
     def _create_problem(self):
         """
