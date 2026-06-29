@@ -1,17 +1,19 @@
 import argparse
 import os
 import platform
+import random
 from datetime import datetime
 from pathlib import Path
 
 import h5py
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import yaml
 from loss_balancer import AdaptiveLossBalancer
-from model import PINN
+from model import PINN, _DEFAULT_OUTPUT_BOUNDS
 from physics import compute_physics_loss
 
 
@@ -19,16 +21,32 @@ class PINNTrainer:
     """
     Trainer for the Physics-Informed Neural Network for LPBF process optimization
     """
-    def __init__(self, config_path, num_threads=4):
+    def __init__(self, config_path, num_threads=4, config=None, seed=None):
         """
-        Initialize the trainer with configuration
+        Initialize the trainer with configuration.
 
         Args:
-            config_path (str): Path to the configuration YAML file
+            config_path (str): Path to the configuration YAML file.
+            num_threads (int): Number of threads for parallel operations.
+            config (dict, optional): In-memory configuration dictionary. If provided,
+                it overrides the YAML file.
+            seed (int, optional): Random seed for reproducibility. Defaults to the
+                value in ``training.random_seed``.
         """
         # Load configuration
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        if config is not None:
+            self.config = config
+        else:
+            with open(config_path, 'r') as f:
+                self.config = yaml.safe_load(f)
+
+        # Reproducibility
+        if seed is None:
+            seed = self.config['training'].get('random_seed', 42)
+        self.seed = seed
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
         # Handle OpenMP library conflict
         os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
@@ -49,6 +67,13 @@ class PINNTrainer:
         # Load material properties
         self.mat_props = self.config['material_properties']
 
+        # Determine whether physics-informed terms are active.
+        train_cfg = self.config['training']
+        self.physics_enabled = any(
+            train_cfg.get(key, 0.0) > 0.0
+            for key in ('lambda_heat', 'lambda_stress', 'lambda_porosity', 'lambda_geometry')
+        )
+
         # Set up directories
         self.setup_directories()
 
@@ -58,8 +83,13 @@ class PINNTrainer:
         # Set up optimizer
         self.optimizer = self._build_optimizer()
 
-        # Initialize Adaptive Loss Balancer (Weights: Data, Heat, Stress, Mechanical)
-        self.loss_balancer = AdaptiveLossBalancer(num_losses=4, alpha=self.config['training'].get('balancer_alpha', 1.5))
+        # Initialize Adaptive Loss Balancer only when physics is used.
+        if self.physics_enabled:
+            self.loss_balancer = AdaptiveLossBalancer(
+                num_losses=4, alpha=train_cfg.get('balancer_alpha', 1.5)
+            )
+        else:
+            self.loss_balancer = None
 
         # Set up learning rate scheduler
         self.scheduler = self._build_scheduler()
@@ -72,6 +102,9 @@ class PINNTrainer:
             'physics_loss': [],
             'loss_weights': {'data': [], 'heat': [], 'stress': [], 'mechanical': []}
         }
+
+        # Test data loader, populated on demand by evaluate().
+        self.test_loader = None
 
         # Current epoch
         self.current_epoch = 0
@@ -118,14 +151,15 @@ class PINNTrainer:
         return combined
 
     def _build_model(self):
-        """Initialize the PINN model"""
+        """Initialize the PINN model."""
         model_config = self.config['model']
         model = PINN(
             in_dim=model_config['input_dim'],
             out_dim=model_config['output_dim'],
             width=model_config['hidden_width'],
             depth=model_config['hidden_depth'],
-            dropout_rate=model_config.get('dropout_rate', 0.1)
+            dropout_rate=model_config.get('dropout_rate', 0.1),
+            apply_output_bounds=model_config.get('apply_output_bounds', False),
         )
         model = model.to(self.device)
         return model
@@ -217,6 +251,130 @@ class PINNTrainer:
 
         print(f"Loaded {len(S_train)} training samples and {len(S_val)} validation samples")
 
+    def load_test_data(self):
+        """Load test data from the processed HDF5 file."""
+        if self.test_loader is not None:
+            return
+
+        data_config = self.config['data']
+        data_file = Path(data_config['processed_data_path'])
+
+        with h5py.File(data_file, 'r') as f:
+            S_test = torch.tensor(f['test/scan_vectors'][:], dtype=torch.float32)
+            coords_test = torch.tensor(f['test/coordinates'][:], dtype=torch.float32)
+            time_test = torch.tensor(f['test/time'][:], dtype=torch.float32)
+            y_test = torch.tensor(f['test/outputs'][:], dtype=torch.float32)
+
+        num_workers = self.config['training'].get('num_workers', None)
+        if num_workers is None:
+            num_workers = 0 if platform.system() == 'Darwin' else self.num_threads
+        pin_memory = self.device.type == 'cuda'
+        persistent = num_workers > 0
+
+        test_dataset = torch.utils.data.TensorDataset(S_test, coords_test, time_test, y_test)
+        self.test_loader = torch.utils.data.DataLoader(
+            test_dataset,
+            batch_size=self.config['training']['batch_size'],
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=persistent
+        )
+        print(f"Loaded {len(S_test)} test samples")
+
+    def evaluate(self):
+        """
+        Evaluate the trained model on the held-out test set.
+
+        Returns:
+            dict: Metrics including per-output MSE/RMSE/R2, total physics
+            residual, and percentage of predictions outside physical bounds.
+        """
+        self.load_test_data()
+        self.model.eval()
+
+        input_dim = self.config['model']['input_dim']
+        mse_loss = nn.MSELoss(reduction='sum')
+
+        total_mse_sum = 0.0
+        per_output_mse_sum = torch.zeros(self.config['model']['output_dim'], device=self.device)
+        per_output_var_sum = torch.zeros(self.config['model']['output_dim'], device=self.device)
+        total_samples = 0
+
+        physics_components = {'heat': 0.0, 'stress': 0.0, 'porosity': 0.0, 'geometry': 0.0}
+
+        all_preds = []
+        all_targets = []
+
+        for S_batch, coords_batch, t_batch, y_batch in self.test_loader:
+            S_batch = S_batch.to(self.device)
+            coords_batch = coords_batch.to(self.device)
+            t_batch = t_batch.to(self.device)
+            y_batch = y_batch.to(self.device)
+
+            with torch.no_grad():
+                model_input = self._build_model_input(S_batch, coords_batch, t_batch, input_dim)
+                y_pred = self.model(model_input)
+
+            all_preds.append(y_pred.detach().cpu())
+            all_targets.append(y_batch.detach().cpu())
+
+            batch_size = y_pred.shape[0]
+            total_samples += batch_size
+            total_mse_sum += mse_loss(y_pred, y_batch).item()
+            per_output_mse_sum += torch.sum((y_pred - y_batch) ** 2, dim=0)
+
+            # Physics residuals require gradients w.r.t. coordinates.
+            heat_loss, stress_loss, porosity_loss, geometry_loss = compute_physics_loss(
+                self.model,
+                S_batch,
+                coords_batch,
+                t_batch,
+                self.mat_props,
+                return_components=True,
+            )
+            physics_components['heat'] += heat_loss.item() * batch_size
+            physics_components['stress'] += stress_loss.item() * batch_size
+            physics_components['porosity'] += porosity_loss.item() * batch_size
+            physics_components['geometry'] += geometry_loss.item() * batch_size
+
+        all_preds = torch.cat(all_preds, dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+
+        # Per-output MSE / RMSE
+        per_output_mse = per_output_mse_sum / total_samples
+        per_output_rmse = torch.sqrt(per_output_mse)
+
+        # R^2 per output
+        target_mean = all_targets.mean(dim=0)
+        ss_tot = torch.sum((all_targets - target_mean) ** 2, dim=0)
+        ss_res = torch.sum((all_preds - all_targets) ** 2, dim=0)
+        per_output_r2 = 1.0 - ss_res / (ss_tot + 1e-12)
+
+        # Bound violations against the default physical ranges
+        bounds = _DEFAULT_OUTPUT_BOUNDS
+        violations = torch.zeros(self.config['model']['output_dim'])
+        for i, (lo, hi) in enumerate(bounds):
+            violations[i] = torch.sum((all_preds[:, i] < lo - 1e-6) | (all_preds[:, i] > hi + 1e-6)).item()
+        violation_pct = 100.0 * violations.sum().item() / (total_samples * self.config['model']['output_dim'])
+
+        # Aggregate physics residual
+        for key in physics_components:
+            physics_components[key] /= total_samples
+        total_physics_residual = sum(physics_components.values())
+
+        metrics = {
+            'test_mse_total': total_mse_sum / total_samples,
+            'test_mse_per_output': per_output_mse.cpu().numpy(),
+            'test_rmse_per_output': per_output_rmse.cpu().numpy(),
+            'test_r2_per_output': per_output_r2.cpu().numpy(),
+            'test_physics_residual': total_physics_residual,
+            'test_physics_components': physics_components,
+            'test_bound_violations_pct': violation_pct,
+            'test_samples': total_samples,
+        }
+        return metrics
+
     def train_step(self, S_batch, coords_batch, t_batch, y_batch):
         self.optimizer.zero_grad()
 
@@ -227,59 +385,79 @@ class PINNTrainer:
         mse_loss = nn.MSELoss()
         data_loss = mse_loss(y_pred, y_batch)
 
-        heat_loss, stress_loss, porosity_loss, geometry_loss = compute_physics_loss(
-            self.model,
-            S_batch,
-            coords_batch,
-            t_batch,
-            self.mat_props,
-            return_components=True,
-        )
-
         train_cfg = self.config['training']
         lambda_heat = train_cfg.get('lambda_heat', 0.1)
         lambda_stress = train_cfg.get('lambda_stress', 0.1)
         lambda_porosity = train_cfg.get('lambda_porosity', 0.05)
         lambda_geometry = train_cfg.get('lambda_geometry', 0.05)
 
-        # Shared parameter for GradNorm (last hidden layer weight matrix)
-        shared_params = list(self.model.hidden[-1].parameters())[0] if hasattr(self.model, 'hidden') else list(self.model.parameters())[-2]
-
-        # Pass unscaled losses to the balancer so adaptive weights control the
-        # relative contribution of each term without double-scaling by lambdas.
-        raw_losses = [
-            data_loss,
-            heat_loss,
-            stress_loss,
-            porosity_loss + geometry_loss,
-        ]
-
-        try:
-            weights = self.loss_balancer.update_weights(raw_losses, shared_params)
-            total_loss = (
-                weights[0] * data_loss
-                + weights[1] * lambda_heat * heat_loss
-                + weights[2] * lambda_stress * stress_loss
-                + weights[3] * (lambda_porosity * porosity_loss + lambda_geometry * geometry_loss)
+        if self.physics_enabled:
+            heat_loss, stress_loss, porosity_loss, geometry_loss = compute_physics_loss(
+                self.model,
+                S_batch,
+                coords_batch,
+                t_batch,
+                self.mat_props,
+                return_components=True,
             )
-            current_weights = weights.detach().cpu().numpy()
-            self.metrics['loss_weights']['data'].append(float(current_weights[0]))
-            self.metrics['loss_weights']['heat'].append(float(current_weights[1]))
-            self.metrics['loss_weights']['stress'].append(float(current_weights[2]))
-            self.metrics['loss_weights']['mechanical'].append(float(current_weights[3]))
-        except RuntimeError:
-            # Fallback to static weighting if GradNorm graph fails
-            total_loss = (
-                data_loss
-                + lambda_heat * heat_loss
+
+            # Shared parameter for GradNorm (last hidden layer weight matrix)
+            shared_params = list(self.model.hidden[-1].parameters())[0] if hasattr(self.model, 'hidden') else list(self.model.parameters())[-2]
+
+            # Pass unscaled losses to the balancer so adaptive weights control the
+            # relative contribution of each term without double-scaling by lambdas.
+            raw_losses = [
+                data_loss,
+                heat_loss,
+                stress_loss,
+                porosity_loss + geometry_loss,
+            ]
+
+            try:
+                weights = self.loss_balancer.update_weights(raw_losses, shared_params)
+                total_loss = (
+                    weights[0] * data_loss
+                    + weights[1] * lambda_heat * heat_loss
+                    + weights[2] * lambda_stress * stress_loss
+                    + weights[3] * (lambda_porosity * porosity_loss + lambda_geometry * geometry_loss)
+                )
+                current_weights = weights.detach().cpu().numpy()
+                self.metrics['loss_weights']['data'].append(float(current_weights[0]))
+                self.metrics['loss_weights']['heat'].append(float(current_weights[1]))
+                self.metrics['loss_weights']['stress'].append(float(current_weights[2]))
+                self.metrics['loss_weights']['mechanical'].append(float(current_weights[3]))
+            except RuntimeError:
+                # Fallback to static weighting if GradNorm graph fails
+                total_loss = (
+                    data_loss
+                    + lambda_heat * heat_loss
+                    + lambda_stress * stress_loss
+                    + lambda_porosity * porosity_loss
+                    + lambda_geometry * geometry_loss
+                )
+                self.metrics['loss_weights']['data'].append(1.0)
+                self.metrics['loss_weights']['heat'].append(lambda_heat)
+                self.metrics['loss_weights']['stress'].append(lambda_stress)
+                self.metrics['loss_weights']['mechanical'].append((lambda_porosity + lambda_geometry) / 2.0)
+
+            physics_term = (
+                lambda_heat * heat_loss
                 + lambda_stress * stress_loss
                 + lambda_porosity * porosity_loss
                 + lambda_geometry * geometry_loss
-            )
+            ).item()
+            heat_val = heat_loss.item()
+            stress_val = stress_loss.item()
+            porosity_val = porosity_loss.item()
+            geometry_val = geometry_loss.item()
+        else:
+            total_loss = data_loss
             self.metrics['loss_weights']['data'].append(1.0)
-            self.metrics['loss_weights']['heat'].append(lambda_heat)
-            self.metrics['loss_weights']['stress'].append(lambda_stress)
-            self.metrics['loss_weights']['mechanical'].append((lambda_porosity + lambda_geometry) / 2.0)
+            self.metrics['loss_weights']['heat'].append(0.0)
+            self.metrics['loss_weights']['stress'].append(0.0)
+            self.metrics['loss_weights']['mechanical'].append(0.0)
+            physics_term = 0.0
+            heat_val = stress_val = porosity_val = geometry_val = 0.0
 
         total_loss.backward()
 
@@ -294,16 +472,11 @@ class PINNTrainer:
         return {
             'total': total_loss.item(),
             'data': data_loss.item(),
-            'physics': (
-                lambda_heat * heat_loss
-                + lambda_stress * stress_loss
-                + lambda_porosity * porosity_loss
-                + lambda_geometry * geometry_loss
-            ).item(),
-            'heat': heat_loss.item(),
-            'stress': stress_loss.item(),
-            'porosity': porosity_loss.item(),
-            'geometry': geometry_loss.item(),
+            'physics': physics_term,
+            'heat': heat_val,
+            'stress': stress_val,
+            'porosity': porosity_val,
+            'geometry': geometry_val,
         }
 
     def train_epoch(self, epoch):
