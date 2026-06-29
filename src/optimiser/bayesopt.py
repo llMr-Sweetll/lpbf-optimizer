@@ -8,9 +8,6 @@ import time
 
 # For Bayesian optimization with Ax/BoTorch
 from ax.service.managed_loop import optimize
-from ax.utils.notebook.plotting import render, init_notebook_plotting
-from ax.utils.tutorials.cbo_utils import normalize
-import ax.modelbridge.registry as registry
 
 
 class BayesianOptimizer:
@@ -56,8 +53,9 @@ class BayesianOptimizer:
         """
         # Import the model class here to avoid circular imports
         import sys
-        import os
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'pinn'))
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(repo_root / 'src' / 'pinn'))
         from model import PINN
         
         # Create model with same architecture as during training
@@ -278,7 +276,6 @@ class BayesianOptimizer:
         
         # Generate plots
         self._plot_convergence(df, objective_name)
-        self._plot_importance(model, objective_name)
     
     def _plot_convergence(self, df, objective_name):
         """
@@ -298,40 +295,12 @@ class BayesianOptimizer:
         plt.savefig(self.output_dir / f"bayesopt_convergence_{objective_name}.png")
         plt.close()
     
-    def _plot_importance(self, model, objective_name):
-        """
-        Plot parameter importance if a model is available
-        
-        Args:
-            model: Ax model
-            objective_name: Name of the objective
-        """
-        if model is not None and hasattr(model, 'feature_importances'):
-            plt.figure(figsize=(10, 6))
-            importances = model.feature_importances()
-            if importances is not None:
-                params = list(importances.keys())
-                values = list(importances.values())
-                
-                # Sort by importance
-                sorted_indices = np.argsort(values)
-                sorted_params = [params[i] for i in sorted_indices]
-                sorted_values = [values[i] for i in sorted_indices]
-                
-                plt.barh(sorted_params, sorted_values)
-                plt.xlabel('Relative Importance')
-                plt.title(f'Parameter Importance for {objective_name}')
-                plt.tight_layout()
-                plt.savefig(self.output_dir / f"bayesopt_importance_{objective_name}.png")
-                plt.close()
-
-
 def main():
     """Main function to run Bayesian optimization"""
     import argparse
     
     parser = argparse.ArgumentParser(description='Run Bayesian optimization with PINN surrogate')
-    parser.add_argument('--config', type=str, default='../../data/params.yaml',
+    parser.add_argument('--config', type=str, default='data/params.yaml',
                         help='Path to configuration file')
     parser.add_argument('--model', type=str, required=True,
                         help='Path to trained PINN model checkpoint')
