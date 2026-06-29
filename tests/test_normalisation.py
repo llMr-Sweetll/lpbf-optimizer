@@ -9,8 +9,9 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root / "src"))
 sys.path.insert(0, str(repo_root / "src" / "pinn"))
 
-from generate_synthetic_data import SyntheticDataGenerator  # noqa: E402
 from model import PINN  # noqa: E402
+
+from generate_synthetic_data import SyntheticDataGenerator  # noqa: E402
 
 
 def test_scaler_round_trip_via_model(tmp_path):

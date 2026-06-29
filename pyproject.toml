@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "lpbf-optimizer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Physics-Informed Neural Network + Multi-Objective Optimisation for LPBF"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Chandrashekhar Hegde", email = "hegde.g.chandrashekhar@gmail.com"},
 ]
@@ -48,7 +49,11 @@ Homepage = "https://github.com/llMr-Sweetll/lpbf-optimizer"
 Repository = "https://github.com/llMr-Sweetll/lpbf-optimizer"
 
 [tool.setuptools]
-packages = []
+package-dir = {"" = "src"}
+py-modules = ["generate_synthetic_data", "preprocessing", "fea_runner"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

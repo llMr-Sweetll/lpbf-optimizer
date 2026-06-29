@@ -7,7 +7,7 @@ import yaml
 repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(repo_root / "src" / "pinn"))
 
-from ablation import AblationStudy, VARIANTS  # noqa: E402
+from ablation import VARIANTS, AblationStudy  # noqa: E402
 
 
 def test_ablation_variants_match_spec():

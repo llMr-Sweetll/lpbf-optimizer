@@ -16,9 +16,9 @@ repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(repo_root / "src" / "pinn"))
 sys.path.insert(0, str(repo_root / "src"))
 
-from generate_synthetic_data import SyntheticDataGenerator  # noqa: E402
 from train import PINNTrainer  # noqa: E402
 
+from generate_synthetic_data import SyntheticDataGenerator  # noqa: E402
 
 # Names and human-readable descriptions for the three ablation variants.
 VARIANTS = {

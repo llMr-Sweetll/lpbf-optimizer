@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 import yaml
 from loss_balancer import AdaptiveLossBalancer
-from model import PINN, _DEFAULT_OUTPUT_BOUNDS
+from model import _DEFAULT_OUTPUT_BOUNDS, PINN
 from physics import compute_physics_loss
 
 
@@ -336,7 +336,6 @@ class PINNTrainer:
 
         total_mse_sum = 0.0
         per_output_mse_sum = torch.zeros(self.config['model']['output_dim'], device=self.device)
-        per_output_var_sum = torch.zeros(self.config['model']['output_dim'], device=self.device)
         total_samples = 0
 
         physics_components = {'heat': 0.0, 'stress': 0.0, 'porosity': 0.0, 'geometry': 0.0}

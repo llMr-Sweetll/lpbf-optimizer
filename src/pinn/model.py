@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-
 # Default physical ranges for the LPBF quality metrics predicted by the model.
 # These bounds are used when ``apply_output_bounds=True`` and no custom bounds
 # are supplied.  The ranges match the synthetic data generator and are wide
