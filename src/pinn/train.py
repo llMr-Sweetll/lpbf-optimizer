@@ -165,6 +165,7 @@ class PINNTrainer:
             depth=model_config['hidden_depth'],
             dropout_rate=model_config.get('dropout_rate', 0.1),
             apply_output_bounds=model_config.get('apply_output_bounds', False),
+            output_bounds_temperature=model_config.get('output_bounds_temperature', 100.0),
         )
         model = model.to(self.device)
         return model

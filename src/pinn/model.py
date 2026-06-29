@@ -29,11 +29,15 @@ class PINN(nn.Module):
         output_bounds (sequence of tuple, optional): ``(min, max)`` pairs for
             each output dimension.  Defaults to ``_DEFAULT_OUTPUT_BOUNDS`` when
             ``apply_output_bounds`` is True.
+        output_bounds_temperature (float): Temperature for the sigmoid bound
+            transform.  A higher value keeps the transform near-linear in the
+            central region, which stabilises training (default 100.0).
         in_dim (int, optional): Backward-compatible alias for ``input_dim``.
         out_dim (int, optional): Backward-compatible alias for ``output_dim``.
     """
     def __init__(self, input_dim=10, output_dim=3, width=512, depth=5, dropout_rate=0.1,
                  apply_output_bounds=False, output_bounds=None,
+                 output_bounds_temperature=100.0,
                  in_dim=None, out_dim=None):
         """
         Initialize the PINN model.
@@ -47,6 +51,7 @@ class PINN(nn.Module):
                                 Default 0.1 is common for regression tasks.
             apply_output_bounds (bool): If True, constrain outputs to physical ranges.
             output_bounds (sequence of tuple, optional): Per-output (min, max) bounds.
+            output_bounds_temperature (float): Sigmoid temperature for bounded outputs.
             in_dim (int, optional): Backward-compatible alias for ``input_dim``.
             out_dim (int, optional): Backward-compatible alias for ``output_dim``.
         """
@@ -65,6 +70,7 @@ class PINN(nn.Module):
         self.in_dim = input_dim
 
         self.apply_output_bounds = apply_output_bounds
+        self.output_bounds_temperature = output_bounds_temperature
         if apply_output_bounds:
             bounds = output_bounds if output_bounds is not None else _DEFAULT_OUTPUT_BOUNDS
             if len(bounds) != output_dim:
@@ -105,8 +111,10 @@ class PINN(nn.Module):
         """
         raw = self.out(self.hidden(S))
         if self.apply_output_bounds:
-            # Map each raw logit to the configured [min, max] interval.
-            return self.output_mins + (self.output_maxs - self.output_mins) * torch.sigmoid(raw)
+            # Map each raw logit to the configured [min, max] interval.  The
+            # temperature keeps the transform near-linear around the midpoint,
+            # avoiding gradient pathology when the network starts close to zero.
+            return self.output_mins + (self.output_maxs - self.output_mins) * torch.sigmoid(raw / self.output_bounds_temperature)
         return raw
 
     def get_output_bounds(self):
