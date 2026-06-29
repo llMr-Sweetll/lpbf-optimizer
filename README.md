@@ -12,6 +12,22 @@
 
 ---
 
+## 📑 Table of Contents
+
+- [Scientific Abstract](#scientific-abstract)
+- [Core Architecture & Methodology](#core-architecture--methodology)
+- [Research-Grade Features](#research-grade-features)
+- [Real Results from the Default Workflow](#real-results-from-the-default-workflow)
+- [Project Structure & Key Files](#project-structure--key-files)
+- [References](#references)
+- [Getting Started](#getting-started)
+- [Documentation](#documentation)
+- [Citation](#citation)
+- [License](#license)
+- [Author](#llmr-sweetll)
+
+---
+
 ## 🔬 Scientific Abstract
 
 **LPBF-Optimizer** addresses the inverse problem in metal additive manufacturing: *determining optimal process parameters to guarantee part quality*. By coupling a **Physics-Informed Neural Network (PINN)** surrogate with **multi-objective evolutionary optimisation (NSGA-III)**, the framework maps LPBF process settings to three quality metrics:
@@ -264,6 +280,8 @@ python src/vis/animate_training_metrics.py
 ## 📖 Citation
 
 If you use **LPBF-Optimizer** in your research, publications, conference papers, or technical reports, please cite it as follows:
+
+**Author:** Chandrashekhar Hegde — [![ORCID](https://img.shields.io/badge/ORCID-0000--0002--8294--7657-green?logo=orcid)](https://orcid.org/0000-0002-8294-7657)
 
 ### BibTeX
 

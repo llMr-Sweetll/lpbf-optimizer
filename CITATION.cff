@@ -5,6 +5,7 @@ title: "LPBF-Optimizer: Physics-Informed Digital Twin for Additive Manufacturing
 authors:
   - family-names: Hegde
     given-names: Chandrashekhar
+    orcid: "https://orcid.org/0000-0002-8294-7657"
 repository-code: "https://github.com/llMr-Sweetll/lpbf-optimizer"
 version: 0.2.0
 year: 2026
