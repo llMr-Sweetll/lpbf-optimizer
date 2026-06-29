@@ -50,7 +50,17 @@ def _laplacian(field, coords):
 
 
 def _heat_residual(T, S, coords, t, mat_props):
-    """Transient heat equation residual for the analytic temperature field."""
+    """Transient heat equation residual for the analytic temperature field.
+
+    All quantities are expressed in a consistent mm-based unit system:
+      - ``rho`` (kg/m^3) -> ``rho_mm`` (kg/mm^3)
+      - ``k`` (W/m·K) -> ``k_mm`` (W/mm·K)
+      - ``cp`` and ``Hm`` remain in J/kg·K and J/kg, respectively.
+
+    The laser heat flux ``q_laser`` (W/mm^2) is converted to an effective
+    volumetric source using a characteristic melt-pool penetration depth of
+    0.1 mm, so that the residual is in W/mm^3.
+    """
     rho = mat_props['rho']
     cp = mat_props['cp']
     k = mat_props['k']
@@ -60,6 +70,11 @@ def _heat_residual(T, S, coords, t, mat_props):
     eta = mat_props['eta']
     r0 = mat_props['r0']
 
+    # Convert to mm-based units.
+    rho_mm = rho / 1e9
+    k_mm = k / 1000.0
+    penetration_depth = 0.1  # mm
+
     dTdt = torch.autograd.grad(T.sum(), t, create_graph=True, retain_graph=True)[0]
     laplacian_T = _laplacian(T, coords)
 
@@ -68,34 +83,37 @@ def _heat_residual(T, S, coords, t, mat_props):
     dfsdT = torch.autograd.grad(fs.sum(), T, create_graph=True, retain_graph=True)[0]
     dfsdt = dfsdT * dTdt
 
-    # Gaussian laser source
+    # Gaussian laser source (surface flux, W/mm^2)
     P = S[:, 0:1]
     v = S[:, 1:2]
     x_laser = v * t
     r_squared = (coords[:, 0:1] - x_laser) ** 2 + coords[:, 1:2] ** 2 + coords[:, 2:3] ** 2
     q_laser = 2.0 * eta * P / (torch.pi * r0 ** 2) * torch.exp(-2.0 * r_squared / r0 ** 2)
 
-    residual = rho * cp * dTdt - k * laplacian_T - q_laser + Hm * dfsdt
+    # Effective volumetric source (W/mm^3).
+    q_vol = q_laser / penetration_depth
+
+    residual = rho_mm * cp * dTdt - k_mm * laplacian_T - q_vol + rho_mm * Hm * dfsdt
     return residual
 
 
 def _stress_residual(sigma, T, coords, mat_props):
     """Thermo-elastic equilibrium residual for the predicted residual stress.
 
-    The predicted residual stress is treated as a scalar field in MPa. The
-    residual penalises the deviation of its Laplacian from the thermo-elastic
-    source induced by the temperature field, with all terms expressed in MPa.
+    The predicted residual stress ``sigma`` is a scalar field in MPa. Its
+    Laplacian therefore has units of MPa/mm^2. The thermo-elastic source term
+    is ``E_MPa * alpha / (1 - nu) * laplacian(T)``, which is also in MPa/mm^2.
     """
     E_GPa = mat_props['E']         # Young's modulus (GPa)
     alpha = mat_props['alpha']     # Thermal expansion coefficient (1/K)
     nu = mat_props['nu']           # Poisson's ratio
 
+    E_MPa = E_GPa * 1000.0         # Convert GPa -> MPa
+
     laplacian_sigma_MPa = _laplacian(sigma, coords)
     laplacian_T = _laplacian(T, coords)
 
-    # E*alpha/(1-nu) has units of Pa/K. Dividing by 1e6 converts to MPa/K so
-    # the source term matches the MPa units of the predicted residual stress.
-    source_MPa = (E_GPa * 1e3 * alpha / (1.0 - nu)) * laplacian_T / 1e6
+    source_MPa = (E_MPa * alpha / (1.0 - nu)) * laplacian_T
     residual = laplacian_sigma_MPa - source_MPa
     return residual
 

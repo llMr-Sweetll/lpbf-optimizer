@@ -202,21 +202,21 @@ class SyntheticDataGenerator:
         
         # 2. Porosity (%)
         # Energy density too low or too high increases porosity (U-shaped curve)
-        optimal_ed = 0.15  # J/mm³ (example optimal value)
-        base_porosity = 0.05 + 0.2 * (energy_density - optimal_ed)**2
+        optimal_ed = 25.0  # J/mm³ (representative middle of the realistic range)
+        base_porosity = 0.05 + 0.2 * (1.0 / (1.0 + np.exp(-(energy_density - optimal_ed) / 10.0)))
         # Add cooling rate effect (too fast or too slow can increase porosity)
         cooling_porosity = 0.02 * np.abs(cooling_rate - 100) / 100
         # Add spatial variation
         spatial_porosity = 0.01 * (1 - spatial_factor) + 0.01 * z_factor
         # Add noise
         porosity_noise = np.abs(np.random.normal(0, 0.005, len(P)))
-        
+
         porosity = base_porosity + cooling_porosity + spatial_porosity + porosity_noise
-        porosity = np.clip(porosity, 0.001, 0.1)  # 0.1% to 10% is a reasonable range
-        
+        porosity = np.clip(porosity, 0.001, 0.3)  # 0.1% to 30% is a reasonable synthetic range
+
         # 3. Geometric Accuracy Ratio (dimensionless)
         # Energy density affects accuracy (too high or too low reduces accuracy)
-        base_accuracy = 0.9 + 0.1 * np.exp(-(energy_density - optimal_ed)**2 / 0.01)
+        base_accuracy = 0.9 + 0.1 * np.exp(-(energy_density - optimal_ed)**2 / 200.0)
         # Add scan angle effect (certain angles may have better accuracy)
         angle_effect = 0.02 * np.sin(theta * np.pi / 180)
         # Add spatial variation
