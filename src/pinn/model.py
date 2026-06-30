@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from uncertainty import get_uncertainty_backend
 
 # Default physical ranges for the LPBF quality metrics predicted by the model.
 # These bounds are used when ``apply_output_bounds=True`` and no custom bounds
@@ -229,42 +230,31 @@ class PINN(nn.Module):
             for i in range(len(self.output_mins))
         )
 
-    def predict_with_uncertainty(self, x, num_samples=100):
+    def predict_with_uncertainty(self, x, num_samples=100, backend="mc_dropout"):
         """
-        Perform Monte Carlo Dropout inference to estimate predictive uncertainty.
+        Estimate predictive uncertainty via a configurable backend.
 
-        Reference:
-            Gal, Y., & Ghahramani, Z. (2016). Dropout as a Bayesian Approximation. ICML.
+        The default backend is Monte-Carlo (MC) Dropout (Gal & Ghahramani, 2016).
+        Unlike the older implementation, only ``Dropout`` modules are enabled
+        during inference; BatchNorm / LayerNorm layers are left untouched. This
+        makes the method safe for future architectures that add normalisation
+        layers.
 
-            For relevance to Additive Manufacturing (AM):
-            [1] Zhao, Mirihanage, et al. (2025). "Revealing melt flow instabilities in LPBF".
-            [2] "Physics-Informed Neural Networks for Additive Manufacturing: A Review" (2025).
+        References:
+            Gal, Y., & Ghahramani, Z. (2016). *Dropout as a Bayesian
+            Approximation: Representing Model Uncertainty in Deep Learning*. ICML.
 
         Args:
-            x (torch.Tensor): Input tensor
-            num_samples (int): Number of stochastic forward passes
+            x (torch.Tensor): Input tensor [batch_size, input_dim].
+            num_samples (int): Number of stochastic forward passes. Ignored by
+                backends that do not rely on repeated sampling (e.g. deep
+                ensemble).
+            backend (str): Backend name. Supported: ``mc_dropout``,
+                ``deep_ensemble``.
 
         Returns:
-            tuple: (mean_prediction, std_deviation)
+            tuple: (mean_prediction [batch_size, output_dim],
+                    std_deviation [batch_size, output_dim])
         """
-        # Enable dropout during inference while preserving the original mode so
-        # the caller's model state is unchanged after MC Dropout sampling.
-        was_training = self.training
-        self.train()
-
-        try:
-            predictions = []
-            with torch.no_grad():
-                for _ in range(num_samples):
-                    predictions.append(self.forward(x).unsqueeze(0))
-
-            # Stack predictions: [num_samples, batch_size, out_dim]
-            predictions = torch.cat(predictions, dim=0)
-
-            # Calculate mean and standard deviation (aleatoric + epistemic uncertainty approx)
-            mean_pred = predictions.mean(dim=0)
-            std_pred = predictions.std(dim=0)
-        finally:
-            self.train(was_training)
-
-        return mean_pred, std_pred
+        uncertainty_backend = get_uncertainty_backend(backend)
+        return uncertainty_backend.predict(self, x, num_samples=num_samples)
