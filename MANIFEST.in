@@ -1,0 +1,9 @@
+include LICENSE
+include README.md
+include CITATION.cff
+include SUBMISSION.md
+include data/params.yaml
+recursive-include data/templates *.inp
+recursive-include docs *.md *.bib *.png *.gif
+recursive-include notebooks *.ipynb
+recursive-include scripts *.py

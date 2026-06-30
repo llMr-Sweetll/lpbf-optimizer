@@ -51,6 +51,7 @@ data/models/*/checkpoints/*.pt
 data/optimized/*.h5
 data/optimized/*.csv
 data/optimized/*.png
+data/benchmark/
 
 # Keep log directories but ignore content
 logs/*

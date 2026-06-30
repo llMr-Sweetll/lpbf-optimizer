@@ -47,3 +47,21 @@ try:
 except ImportError as e:  # pragma: no cover - FastAPI is optional
     app = None
     _import_error = e
+
+
+def main():
+    """Launch the FastAPI inference server."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description='LPBF-Optimizer FastAPI inference server')
+    parser.add_argument('--host', default='0.0.0.0', help='Bind host')
+    parser.add_argument('--port', type=int, default=8000, help='Bind port')
+    args = parser.parse_args()
+
+    if app is None:
+        raise RuntimeError(
+            f"FastAPI/Uvicorn are required for the API server. {_import_error}"
+        )
+    import uvicorn
+
+    uvicorn.run(app, host=args.host, port=args.port)

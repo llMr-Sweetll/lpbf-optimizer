@@ -55,6 +55,7 @@ hpo = [
 lpbf-optimizer-generate = "generate_synthetic_data:main"
 lpbf-optimizer-train = "pinn.train:main"
 lpbf-optimizer-infer = "infer:main"
+lpbf-optimizer-api = "api:main"
 lpbf-optimizer-optimise = "optimiser.nsga3:main"
 lpbf-optimizer-bayesopt = "optimiser.bayesopt:main"
 lpbf-optimizer-characterise = "validate.characterise:main"
@@ -65,7 +66,7 @@ Repository = "https://github.com/llMr-Sweetll/lpbf-optimizer"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["generate_synthetic_data", "preprocessing", "fea_runner"]
+py-modules = ["generate_synthetic_data", "preprocessing", "fea_runner", "infer", "api"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
