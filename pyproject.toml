@@ -47,6 +47,9 @@ api = [
     "fastapi>=0.100.0",
     "uvicorn>=0.23.0",
 ]
+hpo = [
+    "optuna>=3.0.0",
+]
 
 [project.scripts]
 lpbf-optimizer-generate = "generate_synthetic_data:main"
