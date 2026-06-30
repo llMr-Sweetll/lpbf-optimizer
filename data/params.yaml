@@ -82,6 +82,13 @@ validate:
   output_dir: "builds"
   machine_ip: ""
   dry_run: true
+  characterisation_dir: "characterisation"
+  # Example paths for experimental validation inputs (CSV format).
+  # Uncomment and update before running src/validate/characterise.py.
+  # xct_porosity_csv: "data/validation/xct_porosity.csv"
+  # ebsd_csv: "data/validation/ebsd.csv"
+  # stress_csv: "data/validation/stress.csv"
+  # predictions_csv: "data/validation/predictions.csv"
 
 # Optimizer configuration
 optimizer:

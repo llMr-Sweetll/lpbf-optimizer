@@ -18,6 +18,126 @@ logging.basicConfig(
 logger = logging.getLogger('characterise')
 
 
+def parse_xct_porosity_csv(path):
+    """Parse an XCT porosity CSV file.
+
+    The CSV must contain a ``porosity`` column. Optional ``x``, ``y`` and ``z``
+    spatial columns are preserved when present.
+
+    Args:
+        path: Path to the CSV file.
+
+    Returns:
+        Tuple of (DataFrame, summary_dict) where summary_dict contains the
+        mean, standard deviation, minimum and maximum porosity values.
+
+    Raises:
+        ValueError: If the required ``porosity`` column is missing.
+        FileNotFoundError: If ``path`` does not exist.
+    """
+    path = Path(path)
+    df = pd.read_csv(path)
+
+    if 'porosity' not in df.columns:
+        raise ValueError(
+            f"XCT porosity CSV '{path}' is missing required column 'porosity'. "
+            f"Found columns: {list(df.columns)}"
+        )
+
+    summary = {
+        'mean': float(df['porosity'].mean()),
+        'std': float(df['porosity'].std()),
+        'min': float(df['porosity'].min()),
+        'max': float(df['porosity'].max()),
+    }
+    return df, summary
+
+
+def parse_ebsd_csv(path):
+    """Parse an EBSD CSV file.
+
+    The CSV must contain ``phi1``, ``phi``, ``phi2``, ``x`` and ``y`` columns.
+    Optional ``ci`` (confidence index) and ``phase`` columns are preserved.
+
+    Args:
+        path: Path to the CSV file.
+
+    Returns:
+        DataFrame with the EBSD data.
+
+    Raises:
+        ValueError: If any required column is missing.
+        FileNotFoundError: If ``path`` does not exist.
+    """
+    path = Path(path)
+    df = pd.read_csv(path)
+
+    required = ['phi1', 'phi', 'phi2', 'x', 'y']
+    missing = [col for col in required if col not in df.columns]
+    if missing:
+        raise ValueError(
+            f"EBSD CSV '{path}' is missing required columns: {missing}. "
+            f"Found columns: {list(df.columns)}"
+        )
+
+    return df
+
+
+def parse_stress_csv(path):
+    """Parse a residual stress CSV file.
+
+    The CSV must contain a ``sigma_xx`` column. Optional ``sigma_yy``,
+    ``sigma_zz`` and spatial ``x``, ``y``, ``z`` columns are used when present.
+    The von Mises equivalent stress is computed from the available normal
+    components.
+
+    Args:
+        path: Path to the CSV file.
+
+    Returns:
+        Tuple of (DataFrame, summary_dict). The DataFrame includes an added
+        ``von_mises`` column. ``summary_dict`` contains mean, max and standard
+        deviation of the von Mises stress plus mean values for each available
+        normal component.
+
+    Raises:
+        ValueError: If the required ``sigma_xx`` column is missing.
+        FileNotFoundError: If ``path`` does not exist.
+    """
+    path = Path(path)
+    df = pd.read_csv(path)
+
+    if 'sigma_xx' not in df.columns:
+        raise ValueError(
+            f"Stress CSV '{path}' is missing required column 'sigma_xx'. "
+            f"Found columns: {list(df.columns)}"
+        )
+
+    sigma_xx = df['sigma_xx'].values
+    sigma_yy = df['sigma_yy'].values if 'sigma_yy' in df.columns else np.zeros_like(sigma_xx)
+    sigma_zz = df['sigma_zz'].values if 'sigma_zz' in df.columns else np.zeros_like(sigma_xx)
+
+    von_mises = np.sqrt(
+        0.5 * (
+            (sigma_xx - sigma_yy) ** 2
+            + (sigma_yy - sigma_zz) ** 2
+            + (sigma_zz - sigma_xx) ** 2
+        )
+    )
+    df = df.copy()
+    df['von_mises'] = von_mises
+
+    summary = {
+        'mean_von_mises': float(np.mean(von_mises)),
+        'max_von_mises': float(np.max(von_mises)),
+        'std_von_mises': float(np.std(von_mises)),
+        'mean_xx': float(np.mean(sigma_xx)),
+        'mean_yy': float(np.mean(sigma_yy)),
+        'mean_zz': float(np.mean(sigma_zz)),
+    }
+    return df, summary
+
+
 class LPBFCharacterisation:
     """
     Process and analyze experimental data from LPBF-built samples, including
@@ -209,32 +329,31 @@ class LPBFCharacterisation:
         Load EBSD (Electron Backscatter Diffraction) data from file
 
         Args:
-            ebsd_file: Path to EBSD data file (usually .ang or .ctf)
+            ebsd_file: Path to EBSD data file (usually .ang, .ctf or .csv)
 
         Returns:
             Dictionary with EBSD data
+
+        Raises:
+            ValueError: If the file format is unsupported or parsing fails.
         """
         file_ext = Path(ebsd_file).suffix.lower()
 
         if file_ext == '.ang':
-            # Parse TSL .ang file
             ebsd_data = self._parse_ang_file(ebsd_file)
         elif file_ext == '.ctf':
-            # Parse HKL .ctf file
             ebsd_data = self._parse_ctf_file(ebsd_file)
+        elif file_ext == '.csv':
+            df = parse_ebsd_csv(ebsd_file)
+            ebsd_data = {col: df[col].values for col in df.columns}
         else:
-            logger.warning(f"Unsupported EBSD file format: {file_ext}")
-            # Return dummy data for demonstration
-            ebsd_data = {
-                'phi1': np.random.rand(100, 100) * 360,
-                'phi': np.random.rand(100, 100) * 90,
-                'phi2': np.random.rand(100, 100) * 360,
-                'x': np.tile(np.arange(100), (100, 1)),
-                'y': np.tile(np.arange(100).reshape(-1, 1), (1, 100)),
-                'iq': np.random.rand(100, 100) * 100,
-                'ci': np.random.rand(100, 100),
-                'phase': np.ones((100, 100), dtype=int)
-            }
+            raise ValueError(
+                f"Unsupported EBSD file format '{file_ext}' for '{ebsd_file}'. "
+                "Supported formats are .ang, .ctf and .csv."
+            )
+
+        if ebsd_data is None:
+            raise RuntimeError(f"Failed to load EBSD data from '{ebsd_file}'.")
 
         return ebsd_data
 
@@ -247,6 +366,10 @@ class LPBFCharacterisation:
 
         Returns:
             Dictionary with EBSD data
+
+        Raises:
+            ValueError: If the file does not appear to be in TSL .ang format.
+            RuntimeError: If parsing fails for any other reason.
         """
         try:
             # Read header to determine format
@@ -262,35 +385,38 @@ class LPBFCharacterisation:
 
             # TSL .ang format typically has columns:
             # phi1, phi, phi2, x, y, IQ, CI, Phase, ...
-            if data.shape[1] >= 8:
-                ebsd_data = {
-                    'phi1': data.iloc[:, 0].values,
-                    'phi': data.iloc[:, 1].values,
-                    'phi2': data.iloc[:, 2].values,
-                    'x': data.iloc[:, 3].values,
-                    'y': data.iloc[:, 4].values,
-                    'iq': data.iloc[:, 5].values,
-                    'ci': data.iloc[:, 6].values,
-                    'phase': data.iloc[:, 7].values.astype(int)
-                }
+            if data.shape[1] < 8:
+                raise ValueError(
+                    f"File '{ang_file}' does not appear to be in TSL .ang format: "
+                    f"expected at least 8 columns, found {data.shape[1]}."
+                )
 
-                # Try to determine grid dimensions
-                x_unique = len(np.unique(ebsd_data['x']))
-                y_unique = len(np.unique(ebsd_data['y']))
+            ebsd_data = {
+                'phi1': data.iloc[:, 0].values,
+                'phi': data.iloc[:, 1].values,
+                'phi2': data.iloc[:, 2].values,
+                'x': data.iloc[:, 3].values,
+                'y': data.iloc[:, 4].values,
+                'iq': data.iloc[:, 5].values,
+                'ci': data.iloc[:, 6].values,
+                'phase': data.iloc[:, 7].values.astype(int)
+            }
 
-                # Reshape data if it's on a regular grid
-                if x_unique * y_unique == len(ebsd_data['x']):
-                    for key in ebsd_data:
-                        ebsd_data[key] = ebsd_data[key].reshape(y_unique, x_unique)
+            # Try to determine grid dimensions
+            x_unique = len(np.unique(ebsd_data['x']))
+            y_unique = len(np.unique(ebsd_data['y']))
 
-                logger.info(f"Loaded EBSD data from {ang_file} with {len(ebsd_data['x'])} points")
-                return ebsd_data
-            else:
-                logger.error("File does not appear to be in TSL .ang format")
-                return None
+            # Reshape data if it's on a regular grid
+            if x_unique * y_unique == len(ebsd_data['x']):
+                for key in ebsd_data:
+                    ebsd_data[key] = ebsd_data[key].reshape(y_unique, x_unique)
+
+            logger.info(f"Loaded EBSD data from {ang_file} with {len(ebsd_data['x'])} points")
+            return ebsd_data
         except Exception as e:
-            logger.error(f"Failed to parse .ang file: {e}")
-            return None
+            if isinstance(e, ValueError):
+                raise
+            raise RuntimeError(f"Failed to parse .ang file '{ang_file}': {e}") from e
 
     def _parse_ctf_file(self, ctf_file):
         """
@@ -301,21 +427,15 @@ class LPBFCharacterisation:
 
         Returns:
             Dictionary with EBSD data
-        """
-        # This is a placeholder - actual parsing would be more complex
-        logger.warning("CTF parsing not fully implemented. Using dummy data.")
 
-        # Return dummy data
-        return {
-            'phi1': np.random.rand(100, 100) * 360,
-            'phi': np.random.rand(100, 100) * 90,
-            'phi2': np.random.rand(100, 100) * 360,
-            'x': np.tile(np.arange(100), (100, 1)),
-            'y': np.tile(np.arange(100).reshape(-1, 1), (1, 100)),
-            'band_contrast': np.random.rand(100, 100) * 255,
-            'band_slope': np.random.rand(100, 100) * 255,
-            'phase': np.ones((100, 100), dtype=int)
-        }
+        Raises:
+            NotImplementedError: CTF parsing is not yet implemented.
+        """
+        raise NotImplementedError(
+            "HKL .ctf EBSD parsing is not yet implemented. "
+            "Convert the data to CSV with columns phi1, phi, phi2, x, y "
+            "or implement _parse_ctf_file."
+        )
 
     def analyze_microstructure(self, ebsd_data):
         """
@@ -550,218 +670,301 @@ class LPBFCharacterisation:
         Process residual stress measurements (e.g., from XRD or contour method)
 
         Args:
-            stress_data_file: Path to residual stress data file
+            stress_data_file: Path to residual stress data file (CSV)
 
         Returns:
             Dictionary with residual stress metrics
+
+        Raises:
+            ValueError: If the file format is unsupported or required columns
+                are missing.
+            RuntimeError: If CSV parsing fails for any other reason.
         """
-        # This is a placeholder - actual implementation would depend on the data format
         logger.info(f"Processing residual stress data from {stress_data_file}")
 
-        # Load data
         file_ext = Path(stress_data_file).suffix.lower()
 
-        if file_ext == '.csv':
-            try:
-                # Assuming CSV has columns: x, y, z, sigma_xx, sigma_yy, sigma_zz, ...
-                stress_df = pd.read_csv(stress_data_file)
+        if file_ext != '.csv':
+            raise ValueError(
+                f"Unsupported stress data format '{file_ext}' for '{stress_data_file}'. "
+                "Only CSV files are supported."
+            )
 
-                # Extract stress components
-                sigma_xx = stress_df['sigma_xx'].values
-                sigma_yy = stress_df.get('sigma_yy', pd.Series(0)).values
-                sigma_zz = stress_df.get('sigma_zz', pd.Series(0)).values
+        try:
+            stress_df, stress_metrics = parse_stress_csv(stress_data_file)
+            von_mises = stress_df['von_mises'].values
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to process stress CSV '{stress_data_file}': {e}"
+            ) from e
 
-                # Calculate von Mises stress
-                von_mises = np.sqrt(0.5 * ((sigma_xx - sigma_yy)**2 +
-                                          (sigma_yy - sigma_zz)**2 +
-                                          (sigma_zz - sigma_xx)**2))
+        # If spatial coordinates are available, create visualization
+        if all(col in stress_df.columns for col in ['x', 'y']):
+            x = stress_df['x'].values
+            y = stress_df['y'].values
 
-                # Calculate statistics
-                stress_metrics = {
-                    'mean_von_mises': np.mean(von_mises),
-                    'max_von_mises': np.max(von_mises),
-                    'std_von_mises': np.std(von_mises),
-                    'mean_xx': np.mean(sigma_xx),
-                    'mean_yy': np.mean(sigma_yy),
-                    'mean_zz': np.mean(sigma_zz)
-                }
+            x_unique = np.unique(x)
+            y_unique = np.unique(y)
 
-                # If spatial coordinates are available, create visualization
-                if all(col in stress_df.columns for col in ['x', 'y']):
-                    # Assuming 2D data (e.g., from contour method)
-                    x = stress_df['x'].values
-                    y = stress_df['y'].values
+            if len(x_unique) * len(y_unique) == len(x):
+                X, Y = np.meshgrid(x_unique, y_unique)
+                VM = von_mises.reshape(len(y_unique), len(x_unique))
 
-                    # Create a grid for visualization
-                    x_unique = np.unique(x)
-                    y_unique = np.unique(y)
+                plt.figure(figsize=(10, 8))
+                plt.contourf(X, Y, VM, cmap='jet', levels=20)
+                plt.colorbar(label='von Mises Stress (MPa)')
+                plt.title('Residual Stress Distribution')
+                plt.xlabel('X (mm)')
+                plt.ylabel('Y (mm)')
+                plt.savefig(self.run_dir / 'residual_stress_map.png')
+                plt.close()
 
-                    if len(x_unique) * len(y_unique) == len(x):
-                        # Data is on a regular grid
-                        X, Y = np.meshgrid(x_unique, y_unique)
-                        VM = von_mises.reshape(len(y_unique), len(x_unique))
+        # Save results
+        with open(self.run_dir / 'residual_stress_results.yaml', 'w') as f:
+            yaml.dump(stress_metrics, f)
 
-                        plt.figure(figsize=(10, 8))
-                        plt.contourf(X, Y, VM, cmap='jet', levels=20)
-                        plt.colorbar(label='von Mises Stress (MPa)')
-                        plt.title('Residual Stress Distribution')
-                        plt.xlabel('X (mm)')
-                        plt.ylabel('Y (mm)')
-                        plt.savefig(self.run_dir / 'residual_stress_map.png')
-                        plt.close()
-
-                # Save results
-                with open(self.run_dir / 'residual_stress_results.yaml', 'w') as f:
-                    yaml.dump(stress_metrics, f)
-
-                logger.info(f"Residual stress analysis completed: mean von Mises = {stress_metrics['mean_von_mises']:.2f} MPa")
-                return stress_metrics
-
-            except Exception as e:
-                logger.error(f"Failed to process CSV stress data: {e}")
-                # Return dummy data
-                stress_metrics = {
-                    'mean_von_mises': 300.0,
-                    'max_von_mises': 500.0,
-                    'std_von_mises': 50.0,
-                    'mean_xx': 200.0,
-                    'mean_yy': 150.0,
-                    'mean_zz': 100.0
-                }
-                return stress_metrics
-        else:
-            logger.warning(f"Unsupported stress data format: {file_ext}")
-            # Return dummy data
-            stress_metrics = {
-                'mean_von_mises': 300.0,
-                'max_von_mises': 500.0,
-                'std_von_mises': 50.0,
-                'mean_xx': 200.0,
-                'mean_yy': 150.0,
-                'mean_zz': 100.0
-            }
-            return stress_metrics
+        logger.info(
+            f"Residual stress analysis completed: mean von Mises = "
+            f"{stress_metrics['mean_von_mises']:.2f} MPa"
+        )
+        return stress_metrics
 
     def compare_with_predictions(self, experimental_data, prediction_file):
         """
         Compare experimental measurements with PINN predictions
 
+        Predictions may be supplied as an HDF5 file with datasets
+        ``predictions/stress``, ``predictions/porosity`` and
+        ``predictions/geometric_accuracy`` or as a CSV containing the columns
+        ``residual_stress``, ``porosity`` and ``geometric_accuracy``. CSV
+        prediction files may also contain parameter columns such as ``P`` and
+        ``v``.
+
         Args:
-            experimental_data: Dictionary with experimental measurements
-            prediction_file: Path to file with PINN predictions
+            experimental_data: Dictionary with experimental measurements. The
+                method looks for ``stress.mean_von_mises``,
+                ``porosity.porosity`` and ``geometric_accuracy`` /
+                ``geometric.accuracy``.
+            prediction_file: Path to file with PINN predictions (HDF5 or CSV).
 
         Returns:
-            Dictionary with comparison metrics
+            Dictionary with comparison metrics. Each available quantity
+            contains ``predicted``, ``experimental``, ``mae``, ``rmse`` and
+            ``error_percent`` keys when the experimental value is present.
+
+        Raises:
+            ValueError: If the prediction file format is unsupported or the
+                required prediction columns/datasets are missing.
+            RuntimeError: If the prediction file cannot be loaded.
         """
         # Load predictions
-        try:
-            with h5py.File(prediction_file, 'r') as f:
-                # Extract predicted values
-                pred_stress = f['predictions/stress'][:]
-                pred_porosity = f['predictions/porosity'][:]
-                pred_geometric = f['predictions/geometric_accuracy'][:]
+        file_ext = Path(prediction_file).suffix.lower()
 
-                # Parameters used for predictions
-                scan_vectors = f['parameters'][:]
-                param_names = [name.decode('utf-8') for name in f['parameter_names'][:]]
+        if file_ext in ['.h5', '.hdf5']:
+            try:
+                with h5py.File(prediction_file, 'r') as f:
+                    pred_stress = f['predictions/stress'][:]
+                    pred_porosity = f['predictions/porosity'][:]
+                    pred_geometric = f['predictions/geometric_accuracy'][:]
 
-                scan_params = {name: values for name, values in zip(param_names, scan_vectors.T)}
-        except Exception as e:
-            logger.error(f"Failed to load predictions: {e}")
-            # Create dummy predictions
-            pred_stress = np.random.normal(300, 50, 100)
-            pred_porosity = np.random.normal(0.02, 0.005, 100)
-            pred_geometric = np.random.normal(0.95, 0.02, 100)
-            scan_params = {
-                'P': np.random.uniform(150, 400, 100),
-                'v': np.random.uniform(500, 1500, 100)
-            }
+                    scan_vectors = f['parameters'][:]
+                    param_names = [name.decode('utf-8') for name in f['parameter_names'][:]]
+                    scan_params = {name: values for name, values in zip(param_names, scan_vectors.T)}
+            except Exception as e:
+                raise RuntimeError(f"Failed to load predictions from HDF5 '{prediction_file}': {e}") from e
 
-        # Extract experimental values
-        exp_stress = experimental_data.get('stress', {}).get('mean_von_mises', 320.0)
-        exp_porosity = experimental_data.get('porosity', {}).get('porosity', 0.025)
-        exp_geometric = experimental_data.get('geometric', {}).get('accuracy', 0.93)
+        elif file_ext == '.csv':
+            try:
+                pred_df = pd.read_csv(prediction_file)
+                required = ['residual_stress', 'porosity', 'geometric_accuracy']
+                missing = [col for col in required if col not in pred_df.columns]
+                if missing:
+                    raise ValueError(
+                        f"Prediction CSV '{prediction_file}' is missing required columns: {missing}. "
+                        f"Found columns: {list(pred_df.columns)}"
+                    )
 
-        # Calculate errors
-        stress_error = 100 * abs(np.mean(pred_stress) - exp_stress) / exp_stress
-        porosity_error = 100 * abs(np.mean(pred_porosity) - exp_porosity) / max(exp_porosity, 0.0001)
-        geometric_error = 100 * abs(np.mean(pred_geometric) - exp_geometric) / exp_geometric
+                pred_stress = pred_df['residual_stress'].values
+                pred_porosity = pred_df['porosity'].values
+                pred_geometric = pred_df['geometric_accuracy'].values
+
+                scan_params = {
+                    col: pred_df[col].values
+                    for col in pred_df.columns
+                    if col not in required
+                }
+            except Exception as e:
+                if isinstance(e, ValueError):
+                    raise
+                raise RuntimeError(f"Failed to load predictions from CSV '{prediction_file}': {e}") from e
+        else:
+            raise ValueError(
+                f"Unsupported prediction file format '{file_ext}' for '{prediction_file}'. "
+                "Supported formats are .h5, .hdf5 and .csv."
+            )
+
+        # Extract experimental values if present
+        exp_stress = self._extract_experimental_value(
+            experimental_data, 'stress', ['mean_von_mises', 'von_mises', 'mean']
+        )
+        exp_porosity = self._extract_experimental_value(
+            experimental_data, 'porosity', ['porosity', 'mean']
+        )
+        exp_geometric = self._extract_experimental_value(
+            experimental_data,
+            'geometric_accuracy',
+            ['accuracy', 'geometric_accuracy', 'mean']
+        )
+        if exp_geometric is None:
+            exp_geometric = self._extract_experimental_value(
+                experimental_data, 'geometric', ['accuracy', 'geometric_accuracy', 'mean']
+            )
+
+        # Build comparison metrics per quantity
+        comparison = {}
+
+        if exp_stress is not None:
+            comparison['stress'] = self._compute_comparison_metrics(pred_stress, exp_stress)
+        if exp_porosity is not None:
+            comparison['porosity'] = self._compute_comparison_metrics(pred_porosity, exp_porosity)
+        if exp_geometric is not None:
+            comparison['geometric_accuracy'] = self._compute_comparison_metrics(
+                pred_geometric, exp_geometric
+            )
+
+        if not comparison:
+            logger.warning(
+                "No experimental values found in ``experimental_data`` for comparison."
+            )
 
         # Calculate R² for stress vs. parameters (simplified)
         from sklearn.linear_model import LinearRegression
-        if 'P' in scan_params and 'v' in scan_params:
+        if 'P' in scan_params and 'v' in scan_params and len(pred_stress) > 1:
             X = np.column_stack([scan_params['P'], scan_params['v']])
             model = LinearRegression()
             model.fit(X, pred_stress)
-            r2_score = model.score(X, pred_stress)
+            comparison['r2_score'] = float(model.score(X, pred_stress))
         else:
-            r2_score = 0.0
-
-        # Comparison metrics
-        comparison = {
-            'stress': {
-                'predicted': float(np.mean(pred_stress)),
-                'experimental': float(exp_stress),
-                'error_percent': float(stress_error)
-            },
-            'porosity': {
-                'predicted': float(np.mean(pred_porosity)),
-                'experimental': float(exp_porosity),
-                'error_percent': float(porosity_error)
-            },
-            'geometric_accuracy': {
-                'predicted': float(np.mean(pred_geometric)),
-                'experimental': float(exp_geometric),
-                'error_percent': float(geometric_error)
-            },
-            'r2_score': float(r2_score)
-        }
+            comparison['r2_score'] = 0.0
 
         # Save comparison
         with open(self.run_dir / 'prediction_comparison.yaml', 'w') as f:
             yaml.dump(comparison, f)
 
         # Create visualization
+        self._save_prediction_comparison_plot(
+            scan_params, pred_stress, pred_porosity,
+            exp_stress, exp_porosity
+        )
+
+        logger.info("Prediction comparison completed")
+        return comparison
+
+    def _extract_experimental_value(self, experimental_data, key, fallback_keys):
+        """Extract an experimental scalar or array from ``experimental_data``.
+
+        Args:
+            experimental_data: Dictionary of experimental results.
+            key: Primary key to look up.
+            fallback_keys: List of sub-keys to try inside ``experimental_data[key]``.
+
+        Returns:
+            The experimental value (scalar or array) or ``None`` if not found.
+        """
+        if key not in experimental_data:
+            return None
+
+        value = experimental_data[key]
+        if isinstance(value, dict):
+            for sub_key in fallback_keys:
+                if sub_key in value:
+                    return value[sub_key]
+            return None
+
+        return value
+
+    def _compute_comparison_metrics(self, predicted, experimental):
+        """Compute MAE, RMSE and relative error for a single quantity.
+
+        Args:
+            predicted: Array of predicted values.
+            experimental: Scalar or array of experimental values.
+
+        Returns:
+            Dictionary with ``predicted``, ``experimental``, ``mae``, ``rmse``
+            and ``error_percent``.
+        """
+        predicted = np.asarray(predicted)
+        experimental = np.asarray(experimental)
+
+        if predicted.ndim == 0:
+            predicted = predicted.reshape(1)
+        if experimental.ndim == 0:
+            experimental = np.full_like(predicted, experimental)
+
+        mae = float(np.mean(np.abs(predicted - experimental)))
+        rmse = float(np.sqrt(np.mean((predicted - experimental) ** 2)))
+        mean_pred = float(np.mean(predicted))
+        mean_exp = float(np.mean(experimental))
+        error_percent = 100.0 * abs(mean_pred - mean_exp) / max(abs(mean_exp), 1e-12)
+
+        return {
+            'predicted': mean_pred,
+            'experimental': mean_exp,
+            'mae': mae,
+            'rmse': rmse,
+            'error_percent': error_percent,
+        }
+
+    def _save_prediction_comparison_plot(self, scan_params, pred_stress, pred_porosity,
+                                         exp_stress, exp_porosity):
+        """Save a four-panel comparison plot of predictions vs. parameters."""
+        P = scan_params.get('P', np.array([]))
+        v = scan_params.get('v', np.array([]))
+
         plt.figure(figsize=(12, 8))
 
-        plt.subplot(221)
-        plt.scatter(scan_params.get('P', np.random.rand(100)*200+200), pred_stress, alpha=0.7)
-        plt.axhline(y=exp_stress, color='r', linestyle='-', label='Experimental')
-        plt.xlabel('Laser Power (W)')
-        plt.ylabel('Residual Stress (MPa)')
-        plt.title('Stress vs. Power')
-        plt.legend()
+        if len(P) > 0:
+            plt.subplot(221)
+            plt.scatter(P, pred_stress, alpha=0.7)
+            if exp_stress is not None:
+                plt.axhline(y=np.mean(exp_stress), color='r', linestyle='-', label='Experimental')
+            plt.xlabel('Laser Power (W)')
+            plt.ylabel('Residual Stress (MPa)')
+            plt.title('Stress vs. Power')
+            plt.legend()
 
-        plt.subplot(222)
-        plt.scatter(scan_params.get('v', np.random.rand(100)*1000+500), pred_stress, alpha=0.7)
-        plt.axhline(y=exp_stress, color='r', linestyle='-', label='Experimental')
-        plt.xlabel('Scan Speed (mm/s)')
-        plt.ylabel('Residual Stress (MPa)')
-        plt.title('Stress vs. Speed')
-        plt.legend()
+            plt.subplot(223)
+            plt.scatter(P, pred_porosity, alpha=0.7)
+            if exp_porosity is not None:
+                plt.axhline(y=np.mean(exp_porosity), color='r', linestyle='-', label='Experimental')
+            plt.xlabel('Laser Power (W)')
+            plt.ylabel('Porosity')
+            plt.title('Porosity vs. Power')
+            plt.legend()
 
-        plt.subplot(223)
-        plt.scatter(scan_params.get('P', np.random.rand(100)*200+200), pred_porosity, alpha=0.7)
-        plt.axhline(y=exp_porosity, color='r', linestyle='-', label='Experimental')
-        plt.xlabel('Laser Power (W)')
-        plt.ylabel('Porosity')
-        plt.title('Porosity vs. Power')
-        plt.legend()
+        if len(v) > 0:
+            plt.subplot(222)
+            plt.scatter(v, pred_stress, alpha=0.7)
+            if exp_stress is not None:
+                plt.axhline(y=np.mean(exp_stress), color='r', linestyle='-', label='Experimental')
+            plt.xlabel('Scan Speed (mm/s)')
+            plt.ylabel('Residual Stress (MPa)')
+            plt.title('Stress vs. Speed')
+            plt.legend()
 
-        plt.subplot(224)
-        plt.scatter(scan_params.get('v', np.random.rand(100)*1000+500), pred_porosity, alpha=0.7)
-        plt.axhline(y=exp_porosity, color='r', linestyle='-', label='Experimental')
-        plt.xlabel('Scan Speed (mm/s)')
-        plt.ylabel('Porosity')
-        plt.title('Porosity vs. Speed')
-        plt.legend()
+            plt.subplot(224)
+            plt.scatter(v, pred_porosity, alpha=0.7)
+            if exp_porosity is not None:
+                plt.axhline(y=np.mean(exp_porosity), color='r', linestyle='-', label='Experimental')
+            plt.xlabel('Scan Speed (mm/s)')
+            plt.ylabel('Porosity')
+            plt.title('Porosity vs. Speed')
+            plt.legend()
 
         plt.tight_layout()
         plt.savefig(self.run_dir / 'prediction_comparison.png')
         plt.close()
-
-        logger.info("Prediction comparison completed")
-        return comparison
 
     def run_full_characterisation(self, xct_file=None, ebsd_file=None, stress_file=None, prediction_file=None):
         """
@@ -781,10 +984,17 @@ class LPBFCharacterisation:
         # Process XCT data if available
         if xct_file:
             logger.info(f"Processing XCT data from {xct_file}")
-            xct_data = self.load_xct_data(xct_file)
-            if xct_data is not None:
-                porosity_results = self.analyze_porosity(xct_data)
+            file_ext = Path(xct_file).suffix.lower()
+            if file_ext == '.csv':
+                porosity_df, porosity_summary = parse_xct_porosity_csv(xct_file)
+                porosity_results = dict(porosity_summary)
+                porosity_results['dataframe'] = porosity_df
                 results['porosity'] = porosity_results
+            else:
+                xct_data = self.load_xct_data(xct_file)
+                if xct_data is not None:
+                    porosity_results = self.analyze_porosity(xct_data)
+                    results['porosity'] = porosity_results
 
         # Process EBSD data if available
         if ebsd_file:
