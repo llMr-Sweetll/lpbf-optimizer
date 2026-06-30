@@ -53,12 +53,7 @@ class BayesianOptimizer:
         Returns:
             Loaded PINN model
         """
-        # Import the model class here to avoid circular imports
-        import sys
-        from pathlib import Path
-        repo_root = Path(__file__).resolve().parents[2]
-        sys.path.insert(0, str(repo_root / 'src' / 'pinn'))
-        from model import PINN
+        from pinn.model import PINN
 
         # Load the checkpoint first so that optional scaler parameters and bound
         # settings can be reconstructed before the model is instantiated.

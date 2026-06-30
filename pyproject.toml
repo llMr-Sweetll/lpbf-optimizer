@@ -43,6 +43,18 @@ notebooks = [
     "ipywidgets>=8.0.0",
     "torchvision>=0.15.0",
 ]
+api = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+]
+
+[project.scripts]
+lpbf-optimizer-generate = "generate_synthetic_data:main"
+lpbf-optimizer-train = "pinn.train:main"
+lpbf-optimizer-infer = "infer:main"
+lpbf-optimizer-optimise = "optimiser.nsga3:main"
+lpbf-optimizer-bayesopt = "optimiser.bayesopt:main"
+lpbf-optimizer-characterise = "validate.characterise:main"
 
 [project.urls]
 Homepage = "https://github.com/llMr-Sweetll/lpbf-optimizer"

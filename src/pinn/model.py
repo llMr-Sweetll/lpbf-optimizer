@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from uncertainty import get_uncertainty_backend
+
+from pinn.uncertainty import get_uncertainty_backend
 
 # Default physical ranges for the LPBF quality metrics predicted by the model.
 # These bounds are used when ``apply_output_bounds=True`` and no custom bounds

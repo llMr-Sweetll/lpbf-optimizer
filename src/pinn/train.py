@@ -12,10 +12,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import yaml
-from loss_balancer import AdaptiveLossBalancer
-from model import _DEFAULT_OUTPUT_BOUNDS, PINN
-from physics import _analytic_temperature, compute_physics_loss
-from trackers import build_tracker
+
+from pinn.loss_balancer import AdaptiveLossBalancer
+from pinn.model import _DEFAULT_OUTPUT_BOUNDS, PINN
+from pinn.physics import _analytic_temperature, compute_physics_loss
+from pinn.trackers import build_tracker
 
 
 class PINNTrainer:
