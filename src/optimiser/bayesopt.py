@@ -8,7 +8,8 @@ import torch
 import yaml
 
 # For Bayesian optimization with Ax/BoTorch
-from ax.service.managed_loop import optimize
+from ax.api.client import Client
+from ax.api.configs import RangeParameterConfig
 
 
 class BayesianOptimizer:
@@ -145,90 +146,91 @@ class BayesianOptimizer:
 
         return evaluate
 
-    def _create_params_and_objectives(self):
+    def _create_params(self):
         """
-        Create parameters and objectives definitions for Ax
+        Create range-parameter configs for the Ax Client API.
 
         Returns:
-            Tuple of parameters and objectives lists for Ax
+            list[RangeParameterConfig]: Search-space parameters.
         """
         # Get parameter bounds
         param_bounds = self.config['optimizer']['param_bounds']
         self.param_names = list(param_bounds.keys())
 
-        # Define parameters
+        # Define parameters using the new Ax config API
         parameters = []
         for name in self.param_names:
-            bounds = param_bounds[name]
-            parameters.append({
-                "name": name,
-                "type": "range",
-                "bounds": bounds,
-                "value_type": "float"
-            })
+            lo, hi = param_bounds[name]
+            parameters.append(
+                RangeParameterConfig(name=name, bounds=(lo, hi), parameter_type="float")
+            )
 
-        # Define objective - for Bayesian optimization we typically
-        # focus on one objective at a time
-        objective_name = self.config['optimizer']['objectives'][0]
-        objectives = [
-            {
-                "name": "objective",
-                "type": "minimize",  # Assume we want to minimize (e.g., residual stress)
-                "properties": {
-                    "objective_name": objective_name
-                }
-            }
-        ]
-
-        return parameters, objectives
+        return parameters
 
     def run_single_objective_optimization(self, objective_idx=0, n_trials=50):
         """
-        Run Bayesian optimization for a single objective
+        Run Bayesian optimization for a single objective using the Ax Client API.
 
         Args:
             objective_idx: Index of the objective to optimize
             n_trials: Number of trials to run
 
         Returns:
-            Optimization results
+            tuple: (best_parameters, best_metric_values, client)
         """
-        # Create parameters and objectives definitions
-        parameters, objectives = self._create_params_and_objectives()
+        parameters = self._create_params()
 
         # Get the objective name
         objective_name = self.config['optimizer']['objectives'][objective_idx]
         print(f"Optimizing for {objective_name}")
 
+        # Ax always minimizes. For maximized objectives (geometric_accuracy)
+        # we optimize the negated metric.
+        maximize = objective_name == 'geometric_accuracy'
+        objective_str = "-objective" if maximize else "objective"
+
         # Create evaluation function
         evaluation_function = self._create_evaluation_function(objective_idx)
+
+        # Configure the Ax Client experiment
+        client = Client()
+        client.configure_experiment(
+            parameters=parameters,
+            name="lpbf_bayesopt",
+        )
+        client.configure_optimization(objective=objective_str)
 
         # Run optimization
         print(f"Running Bayesian optimization with {n_trials} trials...")
         start_time = time.time()
 
-        best_parameters, values, experiment, model = optimize(
-            parameters=parameters,
-            evaluation_function=evaluation_function,
-            objective_name="objective",
-            minimize=True,  # Minimize the objective
-            total_trials=n_trials,
-            random_seed=self.config['optimizer'].get('seed', 42)
-        )
+        for _ in range(n_trials):
+            trial_params = client.get_next_trials(max_trials=1)
+            for trial_index, params in trial_params.items():
+                raw_data = evaluation_function(params)
+                client.complete_trial(trial_index, raw_data=raw_data)
 
         end_time = time.time()
         print(f"Optimization completed in {end_time - start_time:.2f} seconds")
+
+        # Retrieve best in-sample parameters
+        best_parameters, best_metric_values, _, _ = client.get_best_parameterization()
+
+        # Restore the original sign for maximized objectives when reporting.
+        # ``best_metric_values`` maps metric names to (mean, sem) tuples.
+        best_mean, best_sem = best_metric_values['objective']
+        best_objective_display = -best_mean if maximize else best_mean
 
         # Print results
         print("\nBest parameters:")
         for param, value in best_parameters.items():
             print(f"  {param}: {value}")
-        print(f"Best objective value: {values[0]['objective']}")
+        print(f"Best objective value: {best_objective_display} (sem={best_sem})")
 
         # Save results
-        self._save_results(experiment, model, objective_name)
+        self._save_results(client._experiment, objective_name)
 
-        return best_parameters, values, experiment, model
+        return best_parameters, best_metric_values, client
 
     def run_multi_objective_optimization(self, n_trials=50):
         """
@@ -241,7 +243,7 @@ class BayesianOptimizer:
             n_trials: Number of trials per objective
 
         Returns:
-            List of results for each objective
+            List of (best_parameters, best_metric_values, client) tuples.
         """
         objectives = self.config['optimizer']['objectives']
         results = []
@@ -253,13 +255,12 @@ class BayesianOptimizer:
 
         return results
 
-    def _save_results(self, experiment, model, objective_name):
+    def _save_results(self, experiment, objective_name):
         """
         Save optimization results
 
         Args:
             experiment: Ax experiment
-            model: Ax model
             objective_name: Name of the objective
         """
         # Get the data from the experiment
