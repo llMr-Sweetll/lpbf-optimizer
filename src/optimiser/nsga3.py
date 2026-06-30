@@ -1,3 +1,4 @@
+import json
 import os
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
@@ -15,6 +16,8 @@ from pymoo.operators.mutation.pm import PM
 from pymoo.operators.sampling.rnd import FloatRandomSampling
 from pymoo.optimize import minimize
 from pymoo.util.ref_dirs import get_reference_directions
+
+from data.lineage import build_lineage
 
 
 class SurrogateProblem(Problem):
@@ -327,6 +330,10 @@ class NSGAOptimizer:
             f.attrs['n_solutions'] = len(X)
             f.attrs['n_parameters'] = X.shape[1]
             f.attrs['n_objectives'] = F.shape[1]
+            dataset_path = self.config.get('data', {}).get('processed_data_path')
+            f.attrs['lineage'] = json.dumps(
+                build_lineage(self.config, dataset_path)
+            )
 
         # Save as CSV for easy viewing
         import pandas as pd

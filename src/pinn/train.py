@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 import yaml
 
+from data.lineage import build_lineage
 from pinn.loss_balancer import AdaptiveLossBalancer
 from pinn.model import _DEFAULT_OUTPUT_BOUNDS, PINN
 from pinn.physics import _analytic_temperature, compute_physics_loss
@@ -650,7 +651,11 @@ class PINNTrainer:
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'loss': loss,
-            'metrics': self.metrics
+            'metrics': self.metrics,
+            'lineage': build_lineage(
+                self.config,
+                self.config.get('data', {}).get('processed_data_path'),
+            ),
         }
 
         if self.scheduler is not None:

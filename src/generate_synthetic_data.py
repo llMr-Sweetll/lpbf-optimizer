@@ -7,6 +7,8 @@ import h5py
 import numpy as np
 import yaml
 
+from data.lineage import write_manifest
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -396,6 +398,11 @@ class SyntheticDataGenerator:
             meta_group.create_dataset('parameter_names', data=param_names_array, dtype=dt)
 
         logger.info(f"Saved synthetic dataset to {self.output_path}")
+
+        # Write a lightweight lineage manifest next to the dataset
+        manifest_path = write_manifest(self.config, self.output_path, self.output_dir)
+        logger.info(f"Saved dataset manifest to {manifest_path}")
+
         return self.output_path
 
 

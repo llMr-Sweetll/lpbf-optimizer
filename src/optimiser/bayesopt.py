@@ -1,3 +1,4 @@
+import json
 import time
 from pathlib import Path
 
@@ -10,6 +11,8 @@ import yaml
 # For Bayesian optimization with Ax/BoTorch
 from ax.api.client import Client
 from ax.api.configs import RangeParameterConfig
+
+from data.lineage import build_lineage
 
 
 class BayesianOptimizer:
@@ -307,6 +310,10 @@ class BayesianOptimizer:
             f.attrs['n_parameters'] = X.shape[1]
             best_objective = Y.max() if maximize else Y.min()
             f.attrs['best_objective'] = best_objective
+            dataset_path = self.config.get('data', {}).get('processed_data_path')
+            f.attrs['lineage'] = json.dumps(
+                build_lineage(self.config, dataset_path)
+            )
 
             # Store best parameters
             best_idx = Y.argmax() if maximize else Y.argmin()
