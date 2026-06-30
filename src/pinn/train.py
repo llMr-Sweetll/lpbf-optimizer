@@ -15,6 +15,7 @@ import yaml
 from loss_balancer import AdaptiveLossBalancer
 from model import _DEFAULT_OUTPUT_BOUNDS, PINN
 from physics import _analytic_temperature, compute_physics_loss
+from trackers import build_tracker
 
 
 class PINNTrainer:
@@ -81,6 +82,9 @@ class PINNTrainer:
 
         # Set up directories
         self.setup_directories()
+
+        # Experiment tracker (TensorBoard / W&B / none)
+        self.tracker = build_tracker(self.config, self.run_dir)
 
         # Load input normalisation parameters from the processed dataset, if available.
         self.scaler_params = self._load_scaler_params()
@@ -762,6 +766,16 @@ class PINNTrainer:
                   f"Train Loss: {train_loss:.6f}, "
                   f"Validation Loss: {val_loss:.6f}")
 
+            # Log scalars to the configured tracker
+            self.tracker.log_scalar('loss/train', train_loss, epoch)
+            self.tracker.log_scalar('loss/val', val_loss, epoch)
+            if self.metrics['data_loss']:
+                self.tracker.log_scalar('loss/data', self.metrics['data_loss'][-1], epoch)
+            if self.metrics['physics_loss']:
+                self.tracker.log_scalar('loss/physics', self.metrics['physics_loss'][-1], epoch)
+            current_lr = self.optimizer.param_groups[0]['lr']
+            self.tracker.log_scalar('optimizer/learning_rate', current_lr, epoch)
+
             # Save checkpoint
             is_best = val_loss < best_val_loss
             if is_best:
@@ -782,6 +796,13 @@ class PINNTrainer:
         self.plot_metrics()
         self.save_checkpoint(n_epochs - 1, val_loss)
 
+        # Log final plots to the tracker
+        for plot_file in ['loss_curves.png', 'loss_components.png', 'adaptive_weights.png']:
+            plot_path = self.plot_dir / plot_file
+            if plot_path.exists():
+                self.tracker.log_image(f'plots/{plot_file}', plot_path, n_epochs)
+
+        self.tracker.close()
         print("Training complete!")
 
 

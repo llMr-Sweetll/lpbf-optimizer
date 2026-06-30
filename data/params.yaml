@@ -62,6 +62,7 @@ training:
   output_dir: "data/models"
   plot_freq: 10
   print_freq: 5
+  tracker: "none"  # "tensorboard", "wandb", or "none"
 
 # FEA configuration
 fea:
