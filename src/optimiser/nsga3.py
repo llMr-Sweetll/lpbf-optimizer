@@ -25,7 +25,8 @@ class SurrogateProblem(Problem):
     suitable for multi-objective optimization with pymoo.
     """
 
-    def __init__(self, model, param_bounds, objectives, device='cpu'):
+    def __init__(self, model, param_bounds, objectives, device='cpu',
+                 robust=False, beta=2.0, mc_samples=50):
         """
         Initialize the surrogate problem
 
@@ -36,6 +37,9 @@ class SurrogateProblem(Problem):
             objectives: List of objective names to optimize (must match model outputs)
                 Example: ['residual_stress', 'porosity', 'geometric_accuracy']
             device: Device to run model inference on ('cpu' or 'cuda')
+            robust: If True, optimise a risk metric using MC Dropout uncertainty.
+            beta: Weight on the standard deviation for the risk metric.
+            mc_samples: Number of MC Dropout samples when robust=True.
         """
         # Extract parameter bounds
         self.n_var = len(param_bounds)
@@ -50,6 +54,9 @@ class SurrogateProblem(Problem):
         # Store the surrogate model
         self.model = model
         self.device = device
+        self.robust = robust
+        self.beta = beta
+        self.mc_samples = mc_samples
 
         # Call parent constructor
         super().__init__(
@@ -84,16 +91,29 @@ class SurrogateProblem(Problem):
         time = torch.ones(batch_size, 1, device=self.device)     # Final time step
 
         # Forward pass through the model
-        with torch.no_grad():
-            model_input = torch.cat([x_tensor, coords, time], dim=1)
-            predictions = self.model(model_input)
-
-        # Extract objective values. Residual stress and porosity are minimised.
-        # Geometric accuracy is maximised in reality, so we negate it for pymoo.
-        objectives = predictions.cpu().numpy().copy()
-        for i, name in enumerate(self.objectives):
-            if name == 'geometric_accuracy':
-                objectives[:, i] = -objectives[:, i]
+        model_input = torch.cat([x_tensor, coords, time], dim=1)
+        if self.robust:
+            mean, std = self.model.predict_with_uncertainty(
+                model_input, num_samples=self.mc_samples
+            )
+            mean = mean.cpu().numpy()
+            std = std.cpu().numpy()
+            # Robust risk metric: minimise mean + beta*std for stress/porosity;
+            # for accuracy (maximised) minimise -(mean - beta*std).
+            objectives = mean + self.beta * std
+            for i, name in enumerate(self.objectives):
+                if name == 'geometric_accuracy':
+                    objectives[:, i] = -(mean[:, i] - self.beta * std[:, i])
+            with torch.no_grad():
+                predictions = self.model(model_input)
+        else:
+            with torch.no_grad():
+                predictions = self.model(model_input)
+            objectives = predictions.cpu().numpy().copy()
+            # Geometric accuracy is maximised in reality, so negate it for pymoo.
+            for i, name in enumerate(self.objectives):
+                if name == 'geometric_accuracy':
+                    objectives[:, i] = -objectives[:, i]
 
         out["F"] = objectives
         out["prediction"] = predictions.cpu().numpy()
@@ -104,17 +124,25 @@ class NSGAOptimizer:
     Multi-objective optimizer using NSGA-III algorithm
     """
 
-    def __init__(self, config_path, model_path):
+    def __init__(self, config_path, model_path, robust=False, beta=None):
         """
         Initialize the optimizer
 
         Args:
             config_path: Path to the configuration file
             model_path: Path to the trained PINN model checkpoint
+            robust: If True, use MC Dropout uncertainty for robust optimisation.
+            beta: Uncertainty weight. Defaults to the config value or 2.0.
         """
         # Load configuration
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
+
+        # Robust optimisation settings
+        self.robust = robust
+        if beta is None:
+            beta = self.config['optimizer'].get('beta', 2.0)
+        self.beta = beta
 
         # Set device
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -212,7 +240,9 @@ class NSGAOptimizer:
             model=self.model,
             param_bounds=param_bounds,
             objectives=objectives,
-            device=self.device
+            device=self.device,
+            robust=self.robust,
+            beta=self.beta,
         )
 
     def _setup_algorithm(self):
@@ -381,11 +411,15 @@ def main():
                         help='Path to configuration file')
     parser.add_argument('--model', type=str, required=True,
                         help='Path to trained PINN model checkpoint')
+    parser.add_argument('--robust', action='store_true',
+                        help='Optimise mean + beta*std using MC Dropout uncertainty')
+    parser.add_argument('--beta', type=float, default=None,
+                        help='Override uncertainty weight for robust optimisation')
 
     args = parser.parse_args()
 
     # Create and run optimizer
-    optimizer = NSGAOptimizer(args.config, args.model)
+    optimizer = NSGAOptimizer(args.config, args.model, robust=args.robust, beta=args.beta)
     results = optimizer.optimize()
 
     # Print summary
