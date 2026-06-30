@@ -43,12 +43,15 @@ class PINN(nn.Module):
             When provided, the scan-vector and coordinate slices of the input
             are normalised inside ``forward``; the time column is left unchanged.
             The mean/std tensors are saved in checkpoints via ``state_dict``.
+        predict_temperature (bool): If True, add a fourth output head that
+            predicts temperature. This makes the heat residual learnable.
         in_dim (int, optional): Backward-compatible alias for ``input_dim``.
         out_dim (int, optional): Backward-compatible alias for ``output_dim``.
     """
     def __init__(self, input_dim=10, output_dim=3, width=512, depth=5, dropout_rate=0.1,
                  apply_output_bounds=False, output_bounds=None,
                  output_bounds_temperature=100.0, scaler_params=None,
+                 predict_temperature=False,
                  in_dim=None, out_dim=None):
         """
         Initialize the PINN model.
@@ -64,6 +67,7 @@ class PINN(nn.Module):
             output_bounds (sequence of tuple, optional): Per-output (min, max) bounds.
             output_bounds_temperature (float): Sigmoid temperature for bounded outputs.
             scaler_params (dict, optional): Input normalisation parameters.
+            predict_temperature (bool): Add trainable temperature output head.
             in_dim (int, optional): Backward-compatible alias for ``input_dim``.
             out_dim (int, optional): Backward-compatible alias for ``output_dim``.
         """
@@ -127,6 +131,11 @@ class PINN(nn.Module):
 
         self.hidden = nn.Sequential(*layers)
         self.out = nn.Linear(width, output_dim)
+
+        # Optional trainable temperature head for rigorous heat-equation residuals.
+        self.predict_temperature = predict_temperature
+        if predict_temperature:
+            self.temperature_head = nn.Linear(width, 1)
 
     def _get_scan_dim(self):
         """Return the dimensionality of the scan-vector slice.
@@ -193,7 +202,7 @@ class PINN(nn.Module):
         """
         return self._transform_inputs(x, inverse=True)
 
-    def forward(self, S):
+    def forward(self, S, return_temperature=False):
         """
         Forward pass through the network.
 
@@ -203,18 +212,28 @@ class PINN(nn.Module):
 
         Args:
             S (torch.Tensor): Process parameter tensor [batch_size, input_dim]
+            return_temperature (bool): If True and the model has a temperature
+                head, return ``(quality_outputs, temperature)``.
 
         Returns:
-            torch.Tensor: Predicted outcomes [batch_size, output_dim]
+            torch.Tensor or tuple: Predicted outcomes [batch_size, output_dim],
+            or ``(quality_outputs, temperature)`` when requested.
         """
         S = self._transform_inputs(S)
-        raw = self.out(self.hidden(S))
+        features = self.hidden(S)
+        raw = self.out(features)
         if self.apply_output_bounds:
             # Map each raw logit to the configured [min, max] interval.  The
             # temperature keeps the transform near-linear around the midpoint,
             # avoiding gradient pathology when the network starts close to zero.
-            return self.output_mins + (self.output_maxs - self.output_mins) * torch.sigmoid(raw / self.output_bounds_temperature)
-        return raw
+            quality = self.output_mins + (self.output_maxs - self.output_mins) * torch.sigmoid(raw / self.output_bounds_temperature)
+        else:
+            quality = raw
+
+        if return_temperature and self.predict_temperature:
+            temperature = self.temperature_head(features)
+            return quality, temperature
+        return quality
 
     def get_output_bounds(self):
         """

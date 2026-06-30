@@ -14,7 +14,7 @@ import torch.optim as optim
 import yaml
 from loss_balancer import AdaptiveLossBalancer
 from model import _DEFAULT_OUTPUT_BOUNDS, PINN
-from physics import compute_physics_loss
+from physics import _analytic_temperature, compute_physics_loss
 
 
 class PINNTrainer:
@@ -198,6 +198,7 @@ class PINNTrainer:
             apply_output_bounds=model_config.get('apply_output_bounds', False),
             output_bounds_temperature=model_config.get('output_bounds_temperature', 100.0),
             scaler_params=self.scaler_params,
+            predict_temperature=model_config.get('predict_temperature', False),
         )
         model = model.to(self.device)
         return model
@@ -332,6 +333,7 @@ class PINNTrainer:
         self.model.eval()
 
         input_dim = self.config['model']['input_dim']
+        predict_temperature = self.config['model'].get('predict_temperature', False)
         mse_loss = nn.MSELoss(reduction='sum')
 
         total_mse_sum = 0.0
@@ -369,6 +371,7 @@ class PINNTrainer:
                 t_batch,
                 self.mat_props,
                 return_components=True,
+                use_predicted_temperature=predict_temperature,
             )
             physics_components['heat'] += heat_loss.item() * batch_size
             physics_components['stress'] += stress_loss.item() * batch_size
@@ -417,10 +420,18 @@ class PINNTrainer:
 
         input_dim = self.config['model']['input_dim']
         model_input = self._build_model_input(S_batch, coords_batch, t_batch, input_dim)
-        y_pred = self.model(model_input)
+        predict_temperature = self.config['model'].get('predict_temperature', False)
 
         mse_loss = nn.MSELoss()
-        data_loss = mse_loss(y_pred, y_batch)
+        if predict_temperature:
+            y_pred, T_pred = self.model(model_input, return_temperature=True)
+            T_target = _analytic_temperature(S_batch, coords_batch, t_batch, self.mat_props)
+            temp_loss = mse_loss(T_pred, T_target)
+            data_loss = mse_loss(y_pred, y_batch) + temp_loss
+        else:
+            y_pred = self.model(model_input)
+            data_loss = mse_loss(y_pred, y_batch)
+            temp_loss = torch.tensor(0.0, device=y_pred.device)
 
         train_cfg = self.config['training']
         lambda_heat = train_cfg.get('lambda_heat', 0.1)
@@ -436,6 +447,7 @@ class PINNTrainer:
                 t_batch,
                 self.mat_props,
                 return_components=True,
+                use_predicted_temperature=predict_temperature,
             )
 
             # Shared parameter for GradNorm (last hidden layer weight matrix)
@@ -514,6 +526,7 @@ class PINNTrainer:
             'stress': stress_val,
             'porosity': porosity_val,
             'geometry': geometry_val,
+            'temperature': temp_loss.item(),
         }
 
     def train_epoch(self, epoch):

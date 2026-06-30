@@ -25,6 +25,7 @@ model:
   dropout_rate: 0.1  # MC Dropout rate for UQ (Gal & Ghahramani, 2016)
   apply_output_bounds: true  # Constrain outputs to physical ranges
   output_bounds_temperature: 100.0  # Sigmoid temperature for bounded outputs
+  predict_temperature: false  # Add trainable temperature head for heat residual
   scaler_params: null  # Populated automatically from the processed dataset
 
 # Data configuration

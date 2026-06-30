@@ -158,6 +158,7 @@ def compute_physics_loss(
     lambda_porosity=0.1,
     lambda_geometry=0.1,
     return_components=False,
+    use_predicted_temperature=False,
 ):
     """Compute physics-informed regularisation losses aligned with model outputs.
 
@@ -179,6 +180,8 @@ def compute_physics_loss(
         lambda_porosity (float): Weight for porosity residual.
         lambda_geometry (float): Weight for geometry residual.
         return_components (bool): If True, returns individual losses.
+        use_predicted_temperature (bool): If True, use the model's temperature
+            head for the heat residual instead of the analytic field.
 
     Returns:
         torch.Tensor or tuple: Total physics loss, or (heat, stress, porosity, geometry) losses.
@@ -189,13 +192,21 @@ def compute_physics_loss(
 
     # Forward pass with differentiable inputs.
     model_input = torch.cat([S_batch, coords, t], dim=1)
-    out = model(model_input)
+    if use_predicted_temperature:
+        if not getattr(model, "predict_temperature", False):
+            raise ValueError(
+                "use_predicted_temperature=True requires a model with "
+                "predict_temperature=True"
+            )
+        out, T_pred = model(model_input, return_temperature=True)
+        T = T_pred
+    else:
+        out = model(model_input)
+        T = _analytic_temperature(S_batch, coords, t, mat_props)
 
     residual_stress = out[:, 0:1]
     porosity = out[:, 1:2]
     geometric_accuracy = out[:, 2:3]
-
-    T = _analytic_temperature(S_batch, coords, t, mat_props)
 
     heat_res = _heat_residual(T, S_batch, coords, t, mat_props)
     heat_loss = torch.mean(heat_res ** 2)
